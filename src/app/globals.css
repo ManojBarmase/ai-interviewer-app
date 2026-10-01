@@ -1,0 +1,187 @@
+/**
+ * AI Interviewer — Global Design System
+ * Built on Tailwind CSS v4 (CSS-first configuration).
+ *
+ * Token naming convention:
+ *   --color-*       → Semantic color tokens
+ *   --font-*        → Font family tokens
+ *   --text-*        → Font-size tokens (overrides)
+ *   --radius-*      → Border radius scale
+ *   --shadow-*      → Box shadow tokens
+ *   --transition-*  → Transition duration tokens
+ *   --z-*           → Z-index scale
+ */
+
+@import 'tailwindcss';
+
+/* ─── Theme Tokens ────────────────────────────────────────────────────────── */
+@theme inline {
+  /* Font families */
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* ── Brand Palette (HSL-based for easy manipulation) ── */
+  --color-brand-50: hsl(220 90% 97%);
+  --color-brand-100: hsl(220 85% 94%);
+  --color-brand-200: hsl(220 80% 87%);
+  --color-brand-300: hsl(220 75% 77%);
+  --color-brand-400: hsl(220 70% 65%);
+  --color-brand-500: hsl(220 65% 55%);
+  --color-brand-600: hsl(220 60% 45%);
+  --color-brand-700: hsl(220 58% 36%);
+  --color-brand-800: hsl(220 55% 28%);
+  --color-brand-900: hsl(220 50% 20%);
+  --color-brand-950: hsl(220 45% 12%);
+
+  /* ── Semantic Surfaces (light) ── */
+  --color-background: hsl(0 0% 100%);
+  --color-surface: hsl(220 20% 98%);
+  --color-surface-raised: hsl(220 15% 96%);
+  --color-surface-overlay: hsl(220 10% 94%);
+
+  /* ── Semantic Text ── */
+  --color-text-primary: hsl(220 20% 10%);
+  --color-text-secondary: hsl(220 10% 35%);
+  --color-text-muted: hsl(220 8% 55%);
+  --color-text-inverse: hsl(0 0% 100%);
+
+  /* ── Semantic Borders ── */
+  --color-border: hsl(220 15% 88%);
+  --color-border-subtle: hsl(220 10% 93%);
+  --color-border-strong: hsl(220 20% 75%);
+
+  /* ── Feedback Colors ── */
+  --color-success: hsl(142 71% 45%);
+  --color-success-bg: hsl(142 71% 96%);
+  --color-warning: hsl(38 92% 50%);
+  --color-warning-bg: hsl(38 92% 96%);
+  --color-error: hsl(0 84% 60%);
+  --color-error-bg: hsl(0 84% 97%);
+  --color-info: hsl(201 96% 45%);
+  --color-info-bg: hsl(201 96% 97%);
+
+  /* ── Border Radius Scale ── */
+  --radius-xs: 0.125rem;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+  --radius-full: 9999px;
+
+  /* ── Shadow Scale ── */
+  --shadow-xs: 0 1px 2px 0 hsl(220 20% 10% / 0.04);
+  --shadow-sm:
+    0 1px 3px 0 hsl(220 20% 10% / 0.08), 0 1px 2px -1px hsl(220 20% 10% / 0.06);
+  --shadow-md:
+    0 4px 6px -1px hsl(220 20% 10% / 0.08),
+    0 2px 4px -2px hsl(220 20% 10% / 0.05);
+  --shadow-lg:
+    0 10px 15px -3px hsl(220 20% 10% / 0.08),
+    0 4px 6px -4px hsl(220 20% 10% / 0.05);
+  --shadow-xl:
+    0 20px 25px -5px hsl(220 20% 10% / 0.1),
+    0 8px 10px -6px hsl(220 20% 10% / 0.05);
+  --shadow-brand: 0 4px 20px -2px hsl(220 65% 55% / 0.25);
+
+  /* ── Transition Durations ── */
+  --transition-fast: 100ms;
+  --transition-base: 200ms;
+  --transition-slow: 300ms;
+  --transition-slower: 500ms;
+
+  /* ── Z-Index Scale ── */
+  --z-hide: -1;
+  --z-base: 0;
+  --z-raised: 10;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-overlay: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+}
+
+/* ─── Dark Mode Overrides ────────────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  @theme inline {
+    --color-background: hsl(222 28% 8%);
+    --color-surface: hsl(222 24% 11%);
+    --color-surface-raised: hsl(222 22% 14%);
+    --color-surface-overlay: hsl(222 20% 17%);
+
+    --color-text-primary: hsl(220 15% 95%);
+    --color-text-secondary: hsl(220 10% 70%);
+    --color-text-muted: hsl(220 8% 50%);
+    --color-text-inverse: hsl(220 20% 10%);
+
+    --color-border: hsl(220 15% 22%);
+    --color-border-subtle: hsl(220 12% 17%);
+    --color-border-strong: hsl(220 18% 32%);
+
+    --shadow-xs: 0 1px 2px 0 hsl(0 0% 0% / 0.2);
+    --shadow-sm: 0 1px 3px 0 hsl(0 0% 0% / 0.25);
+    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.3);
+    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.35);
+    --shadow-xl: 0 20px 25px -5px hsl(0 0% 0% / 0.4);
+    --shadow-brand: 0 4px 20px -2px hsl(220 65% 55% / 0.35);
+  }
+}
+
+/* ─── Base Styles ────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  font-feature-settings:
+    'kern' 1,
+    'liga' 1,
+    'calt' 1;
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ─── Focus Visible (Accessibility) ─────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ─── Selection ──────────────────────────────────────────────────────────── */
+::selection {
+  background-color: hsl(220 65% 55% / 0.2);
+  color: var(--color-text-primary);
+}
+
+/* ─── Scrollbar (Chromium) ───────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-strong);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-muted);
+}

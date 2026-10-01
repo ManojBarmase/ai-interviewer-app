@@ -1,0 +1,19 @@
+# Build outputs
+.next/
+out/
+dist/
+build/
+
+# Dependencies
+node_modules/
+
+# Generated files
+next-env.d.ts
+*.lock
+package-lock.json
+
+# Config files that should stay as-is
+postcss.config.mjs
+
+# Assets
+public/

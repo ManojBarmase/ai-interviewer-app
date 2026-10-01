@@ -1,0 +1,69 @@
+{
+  "compilerOptions": {
+    /* ─── Language & Environment ─────────────────────────────────────────── */
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "jsx": "react-jsx",
+
+    /* ─── Module Resolution ──────────────────────────────────────────────── */
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
+    /* ─── Emit ────────────────────────────────────────────────────────────── */
+    "noEmit": true,
+    "incremental": true,
+
+    /* ─── Type Checking — Strict Baseline ────────────────────────────────── */
+    "strict": true,
+    "noImplicitAny": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "useUnknownInCatchVariables": true,
+
+    /* ─── Type Checking — Additional Strictness ──────────────────────────── */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "forceConsistentCasingInFileNames": true,
+
+    /* ─── Module Interop ─────────────────────────────────────────────────── */
+    "isolatedModules": true,
+    "allowJs": false,
+    "skipLibCheck": true,
+
+    /* ─── Next.js Plugin ─────────────────────────────────────────────────── */
+    "plugins": [{ "name": "next" }],
+
+    /* ─── Absolute Imports ───────────────────────────────────────────────── */
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@/components/*": ["./src/components/*"],
+      "@/lib/*": ["./src/lib/*"],
+      "@/hooks/*": ["./src/hooks/*"],
+      "@/services/*": ["./src/services/*"],
+      "@/store/*": ["./src/store/*"],
+      "@/types/*": ["./src/types/*"],
+      "@/app/*": ["./src/app/*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+  ],
+  "exclude": ["node_modules", ".next", "out", "dist", "build"]
+}
