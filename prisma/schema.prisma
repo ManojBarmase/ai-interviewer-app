@@ -1,0 +1,315 @@
+// =============================================================================
+// AI Interviewer App — Prisma Schema
+// Database:  PostgreSQL (Supabase)
+// ORM:       Prisma 6.x  (generator: prisma-client)
+// Design:    UUID primary keys · Soft deletes · Enterprise indexing strategy
+// =============================================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+/// System-level role for access control.
+/// FIX: Was a plain String with no DB enforcement — moved to a typed enum so the
+///      DB rejects any value outside this set at the constraint level.
+enum UserRole {
+  CANDIDATE
+  INTERVIEWER
+  ADMIN
+}
+
+/// Overall status of a single interview session.
+enum SessionStatus {
+  PENDING     // Scheduled, awaiting start
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  EXPIRED     // e.g. candidate never joined
+}
+
+/// Interview role / category used for routing and analytics.
+enum InterviewType {
+  TECHNICAL
+  BEHAVIOURAL
+  SYSTEM_DESIGN
+  HR
+  MIXED
+}
+
+/// Granular lifecycle state of a transcript chunk / recording.
+enum TranscriptStatus {
+  UPLOADING   // Audio blob being written to storage
+  PROCESSING  // STT pipeline running
+  READY       // Text + metadata available
+  FAILED      // STT error
+  REDACTED    // PII removed post-processing
+}
+
+/// High-level hiring signal on the Scorecard.
+enum HiringRecommendation {
+  STRONG_YES
+  YES
+  NEUTRAL
+  NO
+  STRONG_NO
+}
+
+// =============================================================================
+// USER
+// Represents candidates, interviewers, and admins.
+// =============================================================================
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique
+  name      String
+  avatarUrl String?  @map("avatar_url")
+  /// FIX: Was String — now a typed enum; the DB rejects any value outside UserRole.
+  role      UserRole @default(CANDIDATE)
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  // Soft delete
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Relations
+  sessions             Session[]
+  scorecards           Scorecard[]
+  /// FIX: InterviewTranscript.userId was denormalised with no @relation declared.
+  /// Adding this back-reference enforces the FK constraint at the DB level.
+  interviewTranscripts InterviewTranscript[]
+
+  // Indexes
+  // FIX: @@index([email]) removed — @unique already creates a B-tree index;
+  //      the extra @@index was a duplicate wasting storage + write overhead.
+  // FIX: @@index([isDeleted]) removed — boolean columns have near-zero selectivity
+  //      and the planner will never use a single-column boolean index on a large
+  //      table. The composite below covers isDeleted as a left-prefix instead.
+  @@index([role])
+  @@index([createdAt])
+  @@index([isDeleted, createdAt])   // paginated active-user listing
+
+  @@map("users")
+}
+
+// =============================================================================
+// SESSION
+// One session == one end-to-end interview attempt.
+// =============================================================================
+
+model Session {
+  id            String        @id @default(uuid()) @db.Uuid
+  userId        String        @map("user_id") @db.Uuid
+  interviewType InterviewType @default(TECHNICAL) @map("interview_type")
+  status        SessionStatus @default(PENDING)
+  /// FIX: @db.Text added — without it String? maps to VARCHAR with an implicit
+  ///      length limit; interview titles can be arbitrarily long.
+  title         String? @db.Text
+
+  // Optional: link to a pre-defined question bank / template
+  templateId String? @map("template_id") @db.Uuid
+
+  // Scheduling
+  scheduledAt DateTime? @map("scheduled_at")
+  startedAt   DateTime? @map("started_at")
+  endedAt     DateTime? @map("ended_at")
+
+  // Duration in seconds (denormalised for fast analytics queries)
+  durationSeconds Int? @map("duration_seconds")
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Soft delete
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Relations
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  transcripts InterviewTranscript[]
+  scorecard   Scorecard?
+
+  // Indexes
+  // FIX: Removed standalone @@index([userId]) — [userId, isDeleted, createdAt]
+  //      covers userId-only lookups via left-prefix; single-column index is redundant.
+  // FIX: Removed @@index([isDeleted]) — boolean-only index has near-zero selectivity
+  //      and the Postgres planner will not choose it on a large table.
+  @@index([userId, isDeleted, createdAt])  // paginated session list per user (primary)
+  @@index([userId, status])                // filter sessions by status per user
+  @@index([userId, interviewType])         // filter sessions by type per user
+  @@index([status])                        // global queue / admin dashboard
+  @@index([scheduledAt])                   // calendar / reminder cron jobs
+  @@index([createdAt])                     // global recency sort
+
+  @@map("sessions")
+}
+
+// =============================================================================
+// INTERVIEW TRANSCRIPT
+// Stores both audio metadata (Supabase Storage path, duration, codec, …)
+// and the resulting text produced by the STT pipeline.
+// A session can have N transcript chunks (e.g. one per question, or per 30 s).
+// =============================================================================
+
+model InterviewTranscript {
+  id        String @id @default(uuid()) @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+  /// FIX: Previously denormalised without a @relation — no FK constraint existed
+  /// at the DB level. Now wired to User so Postgres enforces referential integrity.
+  userId    String @map("user_id") @db.Uuid
+
+  // Ordering within the session (0-based, immutable once written)
+  chunkIndex Int @default(0) @map("chunk_index")
+
+  // --------------------------------------------------------------------------
+  // Audio metadata
+  // --------------------------------------------------------------------------
+  audioStoragePath String? @map("audio_storage_path") // Supabase Storage object path
+  audioMimeType    String? @map("audio_mime_type")    // e.g. "audio/webm;codecs=opus"
+  audioCodec       String? @map("audio_codec")        // e.g. "opus", "pcm", "aac"
+  audioDurationMs  Int?    @map("audio_duration_ms")  // Milliseconds
+  audioSizeBytes   BigInt? @map("audio_size_bytes")   // Raw upload size
+  audioSampleRate  Int?    @map("audio_sample_rate")  // e.g. 48000
+  audioChannels    Int?    @default(1) @map("audio_channels")
+  audioUrl         String? @map("audio_url")          // Signed/CDN URL (refreshed externally)
+
+  // STT confidence score 0.000–1.000
+  // NUMERIC(4,3): precision=4, scale=3 → valid range 0.000–9.999 (sufficient for 0–1)
+  confidenceScore Decimal? @map("confidence_score") @db.Decimal(4, 3)
+
+  // --------------------------------------------------------------------------
+  // Transcript text
+  // FIX: @db.Text added to all unbounded text columns. Without it Prisma maps
+  //      String to VARCHAR which can silently truncate long STT output.
+  // --------------------------------------------------------------------------
+  rawText     String?          @map("raw_text")     @db.Text // Verbatim STT output
+  cleanedText String?          @map("cleaned_text") @db.Text // Post-processed output
+  language    String?          @default("en-US")             // BCP-47 tag — short, no @db.Text needed
+  wordCount   Int?             @map("word_count")
+  status      TranscriptStatus @default(UPLOADING)
+
+  // --------------------------------------------------------------------------
+  // Speaker diarisation metadata (JSON blob for flexibility)
+  // Example: [{ "speaker": "A", "start": 0.0, "end": 3.2, "text": "…" }]
+  // --------------------------------------------------------------------------
+  speakerSegments Json? @map("speaker_segments")
+
+  // Question this chunk answers (optional)
+  questionId String? @map("question_id") @db.Uuid
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  // Soft delete
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Relations
+  // onDelete: Cascade — chunks are owned by their session; delete session → delete chunks
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  // onDelete: Restrict — do not hard-delete a User who still owns transcript records
+  user    User    @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  // Indexes
+  // FIX: @@unique([sessionId, chunkIndex]) already creates a unique B-tree index in
+  //      Postgres. The separate @@index([sessionId, chunkIndex]) was a duplicate index
+  //      — removed to save disk space and reduce write overhead.
+  // FIX: @@index([isDeleted]) removed — boolean-only index has near-zero selectivity.
+  // FIX: standalone @@index([sessionId]) removed — subsumed by the composite below.
+  @@unique([sessionId, chunkIndex])           // chunk ordering + deduplication guard
+  @@index([sessionId, isDeleted, createdAt])  // paginated chunk list per session
+  @@index([userId, sessionId])                // all chunks for a user+session (audit)
+  @@index([userId, createdAt])                // all chunks for a user (analytics)
+  @@index([status])                           // STT processing-queue worker
+
+  @@map("interview_transcripts")
+}
+
+// =============================================================================
+// SCORECARD
+// One scorecard per session (1-to-1), written after session completion.
+// Stores dimension scores, AI narrative, and the hiring signal.
+// =============================================================================
+
+model Scorecard {
+  id        String @id @default(uuid()) @db.Uuid
+  sessionId String @unique @map("session_id") @db.Uuid // 1-to-1 with Session
+  userId    String @map("user_id")             @db.Uuid
+
+  // --------------------------------------------------------------------------
+  // Evaluation dimensions (scale 0.0–10.0)
+  // FIX: Was Decimal(4,1) → NUMERIC(4,1) allows up to 999.9, semantically
+  //      misleading for a 0–10 scale. Decimal(3,1) → NUMERIC(3,1) constrains
+  //      the range to 0.0–99.9, rejecting obviously impossible score values.
+  // --------------------------------------------------------------------------
+  technicalScore      Decimal? @map("technical_score")       @db.Decimal(3, 1)
+  communicationScore  Decimal? @map("communication_score")   @db.Decimal(3, 1)
+  problemSolvingScore Decimal? @map("problem_solving_score") @db.Decimal(3, 1)
+  cultureFitScore     Decimal? @map("culture_fit_score")     @db.Decimal(3, 1)
+  overallScore        Decimal? @map("overall_score")         @db.Decimal(3, 1)
+
+  // --------------------------------------------------------------------------
+  // AI-generated narrative
+  // FIX: @db.Text added to all unbounded narrative columns. Without it Prisma
+  //      maps String to VARCHAR which may silently truncate long AI feedback.
+  // --------------------------------------------------------------------------
+  strengths        String?  @db.Text // Markdown or plain text
+  weaknesses       String?  @db.Text
+  detailedFeedback String?  @map("detailed_feedback") @db.Text
+  suggestedTopics  String[] @map("suggested_topics")  // Short tag strings; array is fine
+
+  // Structured dimension breakdown (JSON for extensibility)
+  // Example: { "algorithms": 8, "system_design": 7, ... }
+  dimensionBreakdown Json? @map("dimension_breakdown")
+
+  // --------------------------------------------------------------------------
+  // Hiring signal
+  // --------------------------------------------------------------------------
+  recommendation HiringRecommendation?
+  reviewedBy     String?               @map("reviewed_by") @db.Uuid // Interviewer userId who overrode AI
+  reviewedAt     DateTime?             @map("reviewed_at")
+
+  // Versioning (scorecard can be regenerated; version tracks iterations)
+  version Int @default(1)
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  // Soft delete
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Relations
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId],    references: [id], onDelete: Restrict)
+
+  // Indexes
+  // FIX: Removed standalone @@index([userId]) — the composite indexes below
+  //      cover userId as their left-prefix, making the single-column index
+  //      redundant; the planner uses composite left-prefixes for userId-only lookups.
+  // FIX: Removed @@index([isDeleted]) — boolean-only index has near-zero selectivity
+  //      and the Postgres planner will not choose it on a large table.
+  @@index([userId, isDeleted, createdAt])  // paginated scorecard list per user
+  @@index([userId, recommendation])        // filter by hiring decision per user
+  @@index([recommendation])               // aggregate / admin report across all users
+  @@index([overallScore])                 // ranking / leaderboard queries
+  @@index([createdAt])                    // global recency sort
+
+  @@map("scorecards")
+}
