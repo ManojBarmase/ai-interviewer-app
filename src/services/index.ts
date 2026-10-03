@@ -14,4 +14,14 @@
 
 // Example: export { interviewService } from './interview/interview.service';
 // Example: export { authService } from './auth/auth.service';
-export {};
+export {
+  AudioServiceError,
+  startRecording,
+  stopRecording,
+  isRecording,
+  speakText,
+  stopSpeaking,
+  isSpeaking,
+  getAudioCapabilities,
+  getAvailableVoices,
+} from "./audioService";

@@ -14,12 +14,19 @@
     "validate": "npm run type-check && npm run lint && npm run format:check"
   },
   "dependencies": {
-    "@prisma/client": "^7.10.0",
+    "@google/genai": "^2.26.0",
+    "@google/generative-ai": "^0.24.1",
+    "@prisma/client": "^6.19.3",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.2",
+    "@upstash/ratelimit": "^2.2.0",
+    "@vercel/kv": "^3.0.0",
+    "groq-sdk": "^1.6.0",
     "next": "16.3.8",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "zod": "^4.6.5",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -9,4 +9,4 @@
 // Example: export { InterviewCard } from './interview/InterviewCard/InterviewCard';
 // Example: export { QuestionPanel } from './interview/QuestionPanel/QuestionPanel';
 // Example: export { AuthGuard } from './auth/AuthGuard/AuthGuard';
-export {};
+export { ActiveInterviewRoom } from "./Interview/ActiveInterviewRoom";
