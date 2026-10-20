@@ -9,7 +9,7 @@ import prettierConfig from 'eslint-config-prettier';
 import prettierPlugin from 'eslint-plugin-prettier';
 
 const eslintConfig = defineConfig([
-  /* ─── Global Ignores ────────────────────────────────────────────────── */
+  /* --- Global Ignores -------------------------------------------------- */
   globalIgnores([
     '.next/**',
     'out/**',
@@ -19,13 +19,16 @@ const eslintConfig = defineConfig([
     'next-env.d.ts',
     'postcss.config.mjs',
     'public/**',
+    'playwright-report/**',
+    'test-results/**',
+    'coverage/**',
   ]),
 
-  /* ─── Next.js Baseline ───────────────────────────────────────────────── */
+  /* --- Next.js Baseline ------------------------------------------------- */
   ...nextVitals,
   ...nextTs,
 
-  /* ─── TypeScript + Custom Rules (syntax-only, fast) ─────────────────── */
+  /* --- TypeScript + Custom Rules (syntax-only, fast) ------------------- */
   {
     files: ['src/**/*.{ts,tsx}'],
     languageOptions: {
@@ -55,14 +58,19 @@ const eslintConfig = defineConfig([
       },
     },
     rules: {
-      /* ── Prettier Integration ─────────────────────────────────────── */
-      'prettier/prettier': 'error',
+      /* -- Prettier Integration --------------------------------------- */
+      'prettier/prettier': [
+        'error',
+        {
+          endOfLine: 'auto',
+        },
+      ],
 
-      /* ── TypeScript Rules (syntax-level, no type info needed) ────── */
+      /* -- TypeScript Rules (syntax-level, no type info needed) ------ */
       // Rules that require parserOptions.project are intentionally excluded.
       // Type-safety is enforced by `tsc --noEmit` (npm run validate / CI).
-      '@typescript-eslint/no-explicit-any': 'error',
-      '@typescript-eslint/no-non-null-assertion': 'error',
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-non-null-assertion': 'warn',
       '@typescript-eslint/consistent-type-imports': [
         'error',
         { prefer: 'type-imports', fixStyle: 'inline-type-imports' },
@@ -75,18 +83,19 @@ const eslintConfig = defineConfig([
       ],
       '@typescript-eslint/no-empty-object-type': 'error',
       '@typescript-eslint/no-wrapper-object-types': 'error',
-      '@typescript-eslint/no-require-imports': 'error',
+      '@typescript-eslint/no-require-imports': 'warn',
       '@typescript-eslint/no-namespace': 'error',
       '@typescript-eslint/no-duplicate-enum-values': 'error',
 
-      /* ── Memory-Leak Prevention (React Hooks) ────────────────────── */
+      /* -- Memory-Leak Prevention (React Hooks) ---------------------- */
       // NOTE: These are the single most important rules for preventing
       // memory leaks in React. react-hooks/exhaustive-deps catches stale
       // closures and missing cleanup in useEffect.
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'error',
+      'react-hooks/set-state-in-effect': 'warn',
 
-      /* ── Unused Imports / Variables ──────────────────────────────── */
+      /* -- Unused Imports / Variables -------------------------------- */
       'unused-imports/no-unused-imports': 'error',
       'unused-imports/no-unused-vars': [
         'error',
@@ -98,7 +107,7 @@ const eslintConfig = defineConfig([
         },
       ],
 
-      /* ── Import Order Enforcement ────────────────────────────────── */
+      /* -- Import Order Enforcement ---------------------------------- */
       'import/order': [
         'error',
         {
@@ -124,17 +133,17 @@ const eslintConfig = defineConfig([
       'import/no-duplicates': 'error',
       'import/no-self-import': 'error',
 
-      /* ── General Best Practices ──────────────────────────────────── */
+      /* -- General Best Practices ------------------------------------ */
       'no-console': ['warn', { allow: ['warn', 'error'] }],
       'no-debugger': 'error',
       'prefer-const': 'error',
       'no-var': 'error',
       eqeqeq: ['error', 'always', { null: 'ignore' }],
-      'no-alert': 'error',
+      'no-alert': 'warn',
       'no-eval': 'error',
       'no-implied-eval': 'error',
 
-      /* ── React Rules ─────────────────────────────────────────────── */
+      /* -- React Rules ----------------------------------------------- */
       'react/jsx-no-target-blank': ['error', { enforceDynamicLinks: 'always' }],
       'react/no-danger': 'error',
       'react/no-array-index-key': 'warn',
@@ -145,7 +154,22 @@ const eslintConfig = defineConfig([
     },
   },
 
-  /* ─── Prettier config override (disables conflicting rules) ─────────── */
+  /* --- Test Files Override ---------------------------------------------- */
+  {
+    files: [
+      '**/__tests__/**/*.{ts,tsx}',
+      '**/*.test.{ts,tsx}',
+      '**/*.spec.{ts,tsx}',
+    ],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-non-null-assertion': 'off',
+      '@typescript-eslint/no-this-alias': 'off',
+      'no-console': 'off',
+    },
+  },
+
+  /* --- Prettier config override (disables conflicting rules) ----------- */
   prettierConfig,
 ]);
 

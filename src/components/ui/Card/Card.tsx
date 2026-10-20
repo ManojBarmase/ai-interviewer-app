@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 /**
  * @file Card.tsx
@@ -33,12 +33,12 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
-} from "react";
+} from 'react';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// -- Types ---------------------------------------------------------------------
 
-export type CardVariant = "default" | "outlined" | "elevated" | "ghost";
-export type CardSize = "sm" | "md" | "lg";
+export type CardVariant = 'default' | 'outlined' | 'elevated' | 'ghost';
+export type CardSize = 'sm' | 'md' | 'lg';
 
 export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   /** Visual style variant. Default: "default". */
@@ -59,53 +59,49 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
 }
 
-// ── Style maps ────────────────────────────────────────────────────────────────
+// -- Style maps ----------------------------------------------------------------
 
 const variantStyles: Record<CardVariant, string> = {
-  default:
-    "bg-surface border border-border shadow-[--shadow-sm]",
-  outlined:
-    "bg-background border border-border shadow-none",
-  elevated:
-    "bg-surface border border-border shadow-[--shadow-md]",
-  ghost:
-    "bg-transparent border border-transparent shadow-none",
+  default: 'bg-surface border border-border shadow-[--shadow-sm]',
+  outlined: 'bg-background border border-border shadow-none',
+  elevated: 'bg-surface border border-border shadow-[--shadow-md]',
+  ghost: 'bg-transparent border border-transparent shadow-none',
 };
 
 const interactiveStyles =
-  "cursor-pointer transition-all duration-[--transition-base] " +
-  "hover:shadow-[--shadow-md] hover:border-border-strong hover:-translate-y-0.5 " +
-  "active:translate-y-0 active:shadow-[--shadow-sm] " +
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 " +
-  "focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+  'cursor-pointer transition-all duration-[--transition-base] ' +
+  'hover:shadow-[--shadow-md] hover:border-border-strong hover:-translate-y-0.5 ' +
+  'active:translate-y-0 active:shadow-[--shadow-sm] ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 ' +
+  'focus-visible:ring-offset-2 focus-visible:ring-offset-background';
 
-// ── Card (root) ───────────────────────────────────────────────────────────────
+// -- Card (root) ---------------------------------------------------------------
 
 export const Card = forwardRef<HTMLDivElement, CardProps>(
   (
     {
-      variant = "default",
-      size: _size = "md",
+      variant = 'default',
+      size: _size = 'md',
       isInteractive = false,
-      as: Component = "div",
+      as: Component = 'div',
       onClick,
       onKeyDown,
       className,
       children,
       ...rest
     },
-    ref
+    ref,
   ) => {
     // Keyboard handler — activates card on Enter or Space
     const handleKeyDown = useCallback(
       (e: KeyboardEvent<HTMLDivElement>) => {
-        if (isInteractive && (e.key === "Enter" || e.key === " ")) {
+        if (isInteractive && (e.key === 'Enter' || e.key === ' ')) {
           e.preventDefault();
           onClick?.(e as unknown as MouseEvent<HTMLDivElement>);
         }
         onKeyDown?.(e);
       },
-      [isInteractive, onClick, onKeyDown]
+      [isInteractive, onClick, onKeyDown],
     );
 
     return (
@@ -113,34 +109,34 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
         ref={ref}
         // Interactive cards need tab focus and role="button" for a11y.
         // Non-interactive cards are neutral containers.
-        role={isInteractive ? "button" : undefined}
+        role={isInteractive ? 'button' : undefined}
         tabIndex={isInteractive ? 0 : undefined}
         onKeyDown={isInteractive ? handleKeyDown : onKeyDown}
         onClick={onClick}
         className={[
-          "rounded-[--radius-xl] overflow-hidden",
+          'rounded-[--radius-xl] overflow-hidden',
           variantStyles[variant],
           isInteractive && interactiveStyles,
           className,
         ]
           .filter(Boolean)
-          .join(" ")}
+          .join(' ')}
         {...rest}
       >
         {children}
       </Component>
     );
-  }
+  },
 );
 
-Card.displayName = "Card";
+Card.displayName = 'Card';
 
-// ── CardHeader ────────────────────────────────────────────────────────────────
+// -- CardHeader ----------------------------------------------------------------
 
 const headerPadding: Record<CardSize, string> = {
-  sm: "px-4 pt-4 pb-3",
-  md: "px-6 pt-6 pb-4",
-  lg: "px-8 pt-8 pb-5",
+  sm: 'px-4 pt-4 pb-3',
+  md: 'px-6 pt-6 pb-4',
+  lg: 'px-8 pt-8 pb-5',
 };
 
 export interface CardHeaderProps extends HTMLAttributes<HTMLDivElement> {
@@ -160,7 +156,7 @@ export interface CardHeaderProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 export function CardHeader({
-  size = "md",
+  size = 'md',
   leadingElement,
   cardTitle,
   cardDescription,
@@ -171,13 +167,13 @@ export function CardHeader({
   return (
     <div
       className={[
-        "flex items-start gap-4",
+        'flex items-start gap-4',
         headerPadding[size],
-        "border-b border-border",
+        'border-b border-border',
         className,
       ]
         .filter(Boolean)
-        .join(" ")}
+        .join(' ')}
       {...rest}
     >
       {leadingElement !== undefined && (
@@ -204,12 +200,12 @@ export function CardHeader({
   );
 }
 
-// ── CardBody ──────────────────────────────────────────────────────────────────
+// -- CardBody ------------------------------------------------------------------
 
 const bodyPadding: Record<CardSize, string> = {
-  sm: "p-4",
-  md: "p-6",
-  lg: "p-8",
+  sm: 'p-4',
+  md: 'p-6',
+  lg: 'p-8',
 };
 
 export interface CardBodyProps extends HTMLAttributes<HTMLDivElement> {
@@ -217,16 +213,16 @@ export interface CardBodyProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 export function CardBody({
-  size = "md",
+  size = 'md',
   className,
   children,
   ...rest
 }: CardBodyProps) {
   return (
     <div
-      className={[bodyPadding[size], "text-text-secondary", className]
+      className={[bodyPadding[size], 'text-text-secondary', className]
         .filter(Boolean)
-        .join(" ")}
+        .join(' ')}
       {...rest}
     >
       {children}
@@ -234,12 +230,12 @@ export function CardBody({
   );
 }
 
-// ── CardFooter ────────────────────────────────────────────────────────────────
+// -- CardFooter ----------------------------------------------------------------
 
 const footerPadding: Record<CardSize, string> = {
-  sm: "px-4 pt-3 pb-4",
-  md: "px-6 pt-4 pb-6",
-  lg: "px-8 pt-5 pb-8",
+  sm: 'px-4 pt-3 pb-4',
+  md: 'px-6 pt-4 pb-6',
+  lg: 'px-8 pt-5 pb-8',
 };
 
 export interface CardFooterProps extends HTMLAttributes<HTMLDivElement> {
@@ -249,7 +245,7 @@ export interface CardFooterProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 export function CardFooter({
-  size = "md",
+  size = 'md',
   spread = false,
   className,
   children,
@@ -258,14 +254,14 @@ export function CardFooter({
   return (
     <div
       className={[
-        "flex flex-wrap items-center gap-3",
-        spread ? "justify-between" : "justify-end",
+        'flex flex-wrap items-center gap-3',
+        spread ? 'justify-between' : 'justify-end',
         footerPadding[size],
-        "border-t border-border",
+        'border-t border-border',
         className,
       ]
         .filter(Boolean)
-        .join(" ")}
+        .join(' ')}
       {...rest}
     >
       {children}

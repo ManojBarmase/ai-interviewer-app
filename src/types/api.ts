@@ -4,7 +4,7 @@
  * Every service call must return one of these types.
  */
 
-// ─── Generic API Wrapper ───────────────────────────────────────────────────
+// --- Generic API Wrapper ---------------------------------------------------
 
 export type ApiSuccessResponse<T> = {
   success: true;
@@ -21,7 +21,7 @@ export type ApiErrorResponse = {
 
 export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
 
-// ─── Pagination ────────────────────────────────────────────────────────────
+// --- Pagination ------------------------------------------------------------
 
 export type PaginationMeta = {
   page: number;
@@ -34,7 +34,7 @@ export type PaginatedResponse<T> = ApiSuccessResponse<T[]> & {
   meta: PaginationMeta;
 };
 
-// ─── Request Helpers ────────────────────────────────────────────────────────
+// --- Request Helpers --------------------------------------------------------
 
 export type PaginationParams = {
   page?: number;

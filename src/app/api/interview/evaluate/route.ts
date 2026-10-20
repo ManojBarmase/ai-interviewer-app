@@ -1,137 +1,53 @@
-import { NextResponse } from 'next/server';
-import Groq from 'groq-sdk';
-import { prisma } from '@/lib/prisma';
-import { evaluationSchema } from '@/lib/validations/evaluation';
-import { z } from 'zod';
-import { rateLimit } from '@/lib/ratelimit';
+import { cookies } from 'next/headers';
+import { type NextRequest } from 'next/server';
 
-// Initialize Groq SDK
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+import { createSessionLogger } from '@/lib/logger';
+import { createRouteHandlerClient } from '@/lib/supabase/server';
+import { UnauthorizedError, RateLimitError } from '@/server/errors/AppError';
+import { rateLimit } from '@/server/integrations/cache/ratelimit';
+import { evaluationService } from '@/server/services/evaluation.service';
+import { handleApiError, ok } from '@/server/utils/api-response';
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  let log = createSessionLogger('eval', { route: '/api/interview/evaluate' });
+
   try {
-    const body = await req.json();
-    const { sessionId, userId, transcript } = body;
+    const [body, cookieStore, { supabase }] = await Promise.all([
+      req.json(),
+      cookies(),
+      createRouteHandlerClient(),
+    ]);
+    const user = (await supabase.auth.getUser()).data.user;
+    const isDemo = cookieStore.get('demo_candidate_session')?.value === 'true';
+    const userId =
+      user?.id ?? (isDemo ? '00000000-0000-0000-0000-000000000000' : null);
 
-    // Default to 'anonymous' if no userId is provided, though in production auth is required
-    const identifier = userId || 'anonymous';
-    
-    // Enterprise Rate limiting (Upstash Redis)
-    try {
-      const { success } = await rateLimit.limit(identifier);
-      if (!success) {
-        return NextResponse.json(
-          { error: "Too many requests. Please wait before evaluating another interview." }, 
-          { status: 429 }
-        );
-      }
-    } catch (rlError) {
-      console.warn("Rate limiter failed or redis is unreachable. Proceeding without rate limit.", rlError);
-    }
-
-    if (!transcript || typeof transcript !== 'string') {
-      return NextResponse.json({ error: "A valid transcript string is required" }, { status: 400 });
-    }
-
-    // 1. Strict System Prompt for Senior Engineering Manager persona
-    const systemInstruction = `You are a strict, highly experienced Senior Engineering Manager conducting an interview evaluation.
-Analyze the provided interview transcript thoroughly. 
-You must objectively evaluate the candidate's technical skills, communication abilities, and overall fit.
-Return a structured JSON response strictly adhering to the required schema. Ensure scores are between 1.0 and 10.0.`;
-
-    // 2. Groq structured outputs are achieved by prompting + JSON mode
-    // Include the schema in the prompt to ensure it follows the format.
-    const promptWithSchema = `${systemInstruction}
-    
-    IMPORTANT: You must output ONLY a valid JSON object matching this schema exactly:
-    {
-      "technicalScore": <number 1.0 to 10.0>,
-      "communicationScore": <number 1.0 to 10.0>,
-      "strongAreas": ["string", "string"],
-      "weakAreas": ["string", "string"],
-      "actionableFeedback": "string",
-      "recommendation": "STRONG_YES" | "YES" | "NEUTRAL" | "NO" | "STRONG_NO"
-    }`;
-
-    // 3. Call Groq to analyze the transcript
-    const response = await groq.chat.completions.create({
-      model: 'qwen/qwen3.8-27b',
-      messages: [
-        { role: 'system', content: promptWithSchema },
-        { role: 'user', content: transcript }
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.1, // Low temperature for deterministic, analytical evaluation
+    if (!userId) throw new UnauthorizedError('Unauthorized. Please sign in.');
+    log = createSessionLogger(body?.sessionId, {
+      route: '/api/interview/evaluate',
+      userId,
     });
 
-    const evalText = response.choices[0]?.message?.content;
-    if (!evalText) {
-      throw new Error("AI returned an empty evaluation response");
-    }
-
-    // 4. Parse JSON and validate with Zod
-    let parsedJson;
     try {
-      parsedJson = JSON.parse(evalText);
-    } catch (e) {
-      throw new Error("AI returned malformed JSON");
-    }
-    
-    const evaluation = evaluationSchema.parse(parsedJson);
-
-    // 5. Save the evaluation to the Prisma database if session context is provided
-    if (sessionId && userId) {
-      try {
-        const overallScore = (evaluation.technicalScore + evaluation.communicationScore) / 2;
-
-        // Note: If userId is "test-user-id" (mocked) or the sessionId wasn't actually created 
-        // in the DB, this will fail due to Foreign Key constraints. We catch and log it so 
-        // the evaluation is still returned to the user.
-        if (userId !== "test-user-id") {
-          await prisma.scorecard.upsert({
-            where: { sessionId: sessionId },
-            update: {
-              technicalScore: evaluation.technicalScore,
-              communicationScore: evaluation.communicationScore,
-              overallScore: overallScore,
-              strengths: evaluation.strongAreas.join('\n- '),
-              weaknesses: evaluation.weakAreas.join('\n- '),
-              detailedFeedback: evaluation.actionableFeedback,
-              recommendation: evaluation.recommendation,
-            },
-            create: {
-              sessionId,
-              userId,
-              technicalScore: evaluation.technicalScore,
-              communicationScore: evaluation.communicationScore,
-              overallScore: overallScore,
-              strengths: evaluation.strongAreas.join('\n- '),
-              weaknesses: evaluation.weakAreas.join('\n- '),
-              detailedFeedback: evaluation.actionableFeedback,
-              recommendation: evaluation.recommendation,
-            }
-          });
-        } else {
-          console.log("[MOCK_MODE] Skipping Prisma DB save for scorecard because userId is mocked.");
-        }
-      } catch (dbError) {
-        console.warn("Failed to save scorecard to database (likely missing User/Session records):", dbError);
+      if (!(await rateLimit.limit(userId)).success) {
+        throw new RateLimitError('Too many requests. Please wait.');
       }
+    } catch (e) {
+      if (e instanceof RateLimitError) throw e;
     }
 
-    return NextResponse.json({ success: true, evaluation });
+    const email =
+      user?.email ?? (isDemo ? 'demo-candidate@ai-interviewer.internal' : null);
+    const firstName =
+      user?.user_metadata?.first_name ?? (isDemo ? 'Demo Candidate' : null);
+    const evaluation = await evaluationService.evaluateInterview(body, {
+      id: userId,
+      email,
+      firstName,
+    });
 
-  } catch (error: any) {
-    console.error("[EVALUATION_ERROR]", error);
-    
-    // Handle specific Zod validation errors
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ 
-        error: "AI output validation failed", 
-        details: error.errors 
-      }, { status: 422 });
-    }
-    
-    return NextResponse.json({ error: error.message || "Failed to evaluate transcript" }, { status: 500 });
+    return ok({ success: true, evaluation });
+  } catch (error) {
+    return handleApiError(error, log);
   }
 }

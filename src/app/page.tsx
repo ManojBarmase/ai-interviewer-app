@@ -1,21 +1,42 @@
-import { ActiveInterviewRoom } from "@/components/domain";
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 
-export default function Home() {
-  return (
-    <main className="min-h-screen p-8 bg-background">
-      <div className="max-w-4xl mx-auto space-y-8">
-        <header className="text-center space-y-2">
-          <h1 className="text-3xl font-bold text-text-primary">
-            AI Mock Interviewer
-          </h1>
-          <p className="text-text-secondary">
-            Test the STT, TTS, and Gemini integration below.
-          </p>
-        </header>
+import { createServerClient } from '@supabase/ssr';
 
-        {/* Render our newly built component */}
-        <ActiveInterviewRoom />
-      </div>
-    </main>
+/**
+ * Enterprise Entry Point (Root /)
+ *
+ * In an enterprise SaaS application, the root URL determines access:
+ * - Authenticated users are directly routed to their active workspace (/dashboard).
+ * - Unauthenticated users are routed to authentication (/login).
+ *
+ * The actual mock interview chamber is securely isolated at /interview
+ * and requires role configuration via /dashboard/setup.
+ */
+export default async function HomePage() {
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+      },
+    },
   );
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const isDemoSession =
+    cookieStore.get('demo_candidate_session')?.value === 'true';
+
+  if (user || isDemoSession) {
+    redirect('/dashboard');
+  } else {
+    redirect('/login');
+  }
 }

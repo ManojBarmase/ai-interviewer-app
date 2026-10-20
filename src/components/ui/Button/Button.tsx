@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 /**
  * @file Button.tsx
@@ -19,18 +19,14 @@
  * - `type="button"` default prevents accidental form submission
  */
 
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// -- Types ---------------------------------------------------------------------
 
 export type ButtonVariant =
-  | "primary"
-  | "secondary"
-  | "ghost"
-  | "danger"
-  | "danger-outline";
+  'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-outline';
 
-export type ButtonSize = "sm" | "md" | "lg";
+export type ButtonSize = 'sm' | 'md' | 'lg';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** Visual style variant. Default: "primary". */
@@ -55,67 +51,67 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    * Accessible label — required when the button contains only an icon
    * and no visible text.
    */
-  "aria-label"?: string;
+  'aria-label'?: string;
 }
 
-// ── Style maps ────────────────────────────────────────────────────────────────
+// -- Style maps ----------------------------------------------------------------
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary: [
-    "bg-brand-500 text-white border border-brand-500",
-    "hover:bg-brand-600 hover:border-brand-600",
-    "active:bg-brand-700 active:border-brand-700",
-    "focus-visible:ring-brand-500/40",
-  ].join(" "),
+    'bg-brand-500 text-white border border-brand-500',
+    'hover:bg-brand-600 hover:border-brand-600',
+    'active:bg-brand-700 active:border-brand-700',
+    'focus-visible:ring-brand-500/40',
+  ].join(' '),
 
   secondary: [
-    "bg-surface text-text-primary border border-border",
-    "hover:bg-surface-raised hover:border-border-strong",
-    "active:bg-surface-overlay",
-    "focus-visible:ring-border-strong/40",
-  ].join(" "),
+    'bg-surface text-text-primary border border-border',
+    'hover:bg-surface-raised hover:border-border-strong',
+    'active:bg-surface-overlay',
+    'focus-visible:ring-border-strong/40',
+  ].join(' '),
 
   ghost: [
-    "bg-transparent text-text-secondary border border-transparent",
-    "hover:bg-surface hover:text-text-primary",
-    "active:bg-surface-raised",
-    "focus-visible:ring-border/60",
-  ].join(" "),
+    'bg-transparent text-text-secondary border border-transparent',
+    'hover:bg-surface hover:text-text-primary',
+    'active:bg-surface-raised',
+    'focus-visible:ring-border/60',
+  ].join(' '),
 
   danger: [
-    "bg-error text-white border border-error",
-    "hover:bg-red-600 hover:border-red-600",
-    "active:bg-red-700 active:border-red-700",
-    "focus-visible:ring-error/40",
-  ].join(" "),
+    'bg-error text-white border border-error',
+    'hover:bg-red-600 hover:border-red-600',
+    'active:bg-red-700 active:border-red-700',
+    'focus-visible:ring-error/40',
+  ].join(' '),
 
-  "danger-outline": [
-    "bg-transparent text-error border border-error",
-    "hover:bg-error-bg",
-    "active:bg-red-100",
-    "focus-visible:ring-error/40",
-  ].join(" "),
+  'danger-outline': [
+    'bg-transparent text-error border border-error',
+    'hover:bg-error-bg',
+    'active:bg-red-100',
+    'focus-visible:ring-error/40',
+  ].join(' '),
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
-  sm: "h-8 px-3 text-sm gap-1.5 rounded-md",
-  md: "h-10 px-4 text-sm gap-2 rounded-lg",
-  lg: "h-12 px-6 text-base gap-2.5 rounded-xl",
+  sm: 'h-8 px-3 text-sm gap-1.5 rounded-md',
+  md: 'h-10 px-4 text-sm gap-2 rounded-lg',
+  lg: 'h-12 px-6 text-base gap-2.5 rounded-xl',
 };
 
 const iconSizeStyles: Record<ButtonSize, string> = {
-  sm: "size-3.5",
-  md: "size-4",
-  lg: "size-5",
+  sm: 'size-3.5',
+  md: 'size-4',
+  lg: 'size-5',
 };
 
-// ── Spinner ───────────────────────────────────────────────────────────────────
+// -- Spinner -------------------------------------------------------------------
 
 function Spinner({ className }: { className?: string }) {
   return (
     <svg
       aria-hidden="true"
-      className={["animate-spin", className].filter(Boolean).join(" ")}
+      className={['animate-spin', className].filter(Boolean).join(' ')}
       fill="none"
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
@@ -137,24 +133,24 @@ function Spinner({ className }: { className?: string }) {
   );
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// -- Component -----------------------------------------------------------------
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   (
     {
-      variant = "primary",
-      size = "md",
+      variant = 'primary',
+      size = 'md',
       isLoading = false,
       leadingIcon,
       trailingIcon,
       disabled,
       children,
       className,
-      type = "button",
-      "aria-label": ariaLabel,
+      type = 'button',
+      'aria-label': ariaLabel,
       ...rest
     },
-    ref
+    ref,
   ) => {
     const isDisabled = disabled === true || isLoading;
 
@@ -172,25 +168,25 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         aria-label={ariaLabel}
         className={[
           // Layout
-          "relative inline-flex items-center justify-center font-medium",
-          "select-none whitespace-nowrap",
+          'relative inline-flex items-center justify-center font-medium',
+          'select-none whitespace-nowrap',
           // Transitions
-          "transition-all duration-[--transition-base]",
+          'transition-all duration-[--transition-base]',
           // Focus ring — outline-based so it works in forced-colors mode
-          "outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
-          "focus-visible:ring-offset-background",
+          'outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
+          'focus-visible:ring-offset-background',
           // Variant
           variantStyles[variant],
           // Size
           sizeStyles[size],
           // Disabled / loading
           isDisabled
-            ? "cursor-not-allowed opacity-50 pointer-events-none"
-            : "cursor-pointer",
+            ? 'cursor-not-allowed opacity-50 pointer-events-none'
+            : 'cursor-pointer',
           className,
         ]
           .filter(Boolean)
-          .join(" ")}
+          .join(' ')}
         {...rest}
       >
         {/* Loading spinner replaces leading icon */}
@@ -206,7 +202,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 
         {/* Label */}
         {children !== undefined && (
-          <span className={isLoading ? "opacity-0" : undefined}>
+          <span className={isLoading ? 'opacity-0' : undefined}>
             {children}
           </span>
         )}
@@ -219,7 +215,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         )}
       </button>
     );
-  }
+  },
 );
 
-Button.displayName = "Button";
+Button.displayName = 'Button';

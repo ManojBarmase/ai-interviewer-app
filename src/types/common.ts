@@ -4,7 +4,7 @@
  * Branded types prevent ID-mixing bugs at compile time.
  */
 
-// ─── Branded Primitives ────────────────────────────────────────────────────
+// --- Branded Primitives ----------------------------------------------------
 
 declare const __brand: unique symbol;
 
@@ -18,7 +18,7 @@ export type QuestionId = Brand<string, 'QuestionId'>;
 /** ISO 8601 timestamp string */
 export type ISODateString = Brand<string, 'ISODateString'>;
 
-// ─── Utility Types ─────────────────────────────────────────────────────────
+// --- Utility Types ---------------------------------------------------------
 
 /** Makes specified keys optional */
 export type PartialBy<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;

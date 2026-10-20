@@ -1,19 +1,14 @@
 /**
  * @file UI component barrel export
- * @description Re-exports all primitive/atomic UI components.
- * Add new components here to expose them via @/components/ui
+ * @description Enterprise Design System primitive UI components.
+ * Exposes Button, Card, Modal, Input, Badge, and Select.
  */
 
-// ── Primitives ────────────────────────────────────────────────────────────────
-export { Button } from "./Button/Button";
-export type { ButtonProps, ButtonVariant, ButtonSize } from "./Button/Button";
+// -- Primitives ----------------------------------------------------------------
+export { Button } from './Button/Button';
+export type { ButtonProps, ButtonVariant, ButtonSize } from './Button/Button';
 
-export {
-  Card,
-  CardHeader,
-  CardBody,
-  CardFooter,
-} from "./Card/Card";
+export { Card, CardHeader, CardBody, CardFooter } from './Card/Card';
 export type {
   CardProps,
   CardVariant,
@@ -21,14 +16,9 @@ export type {
   CardHeaderProps,
   CardBodyProps,
   CardFooterProps,
-} from "./Card/Card";
+} from './Card/Card';
 
-export {
-  Modal,
-  ModalHeader,
-  ModalBody,
-  ModalFooter,
-} from "./Modal/Modal";
+export { Modal, ModalHeader, ModalBody, ModalFooter } from './Modal/Modal';
 export type {
   ModalProps,
   ModalSize,
@@ -36,4 +26,18 @@ export type {
   ModalHeaderProps,
   ModalBodyProps,
   ModalFooterProps,
-} from "./Modal/Modal";
+} from './Modal/Modal';
+
+export { Input } from './Input/Input';
+export type { InputProps, InputVariant, InputSize } from './Input/Input';
+
+export { Badge } from './Badge/Badge';
+export type { BadgeProps, BadgeVariant, BadgeSize } from './Badge/Badge';
+
+export { Select } from './Select/Select';
+export type {
+  SelectProps,
+  SelectVariant,
+  SelectSize,
+  SelectOption,
+} from './Select/Select';

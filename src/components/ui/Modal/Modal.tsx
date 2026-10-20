@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 /**
  * @file Modal.tsx
@@ -38,13 +38,14 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
-} from "react";
-import { createPortal } from "react-dom";
+} from 'react';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+import { createPortal } from 'react-dom';
 
-export type ModalSize = "sm" | "md" | "lg" | "xl" | "full";
-export type ModalVariant = "default" | "danger" | "info";
+// -- Types ---------------------------------------------------------------------
+
+export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full';
+export type ModalVariant = 'default' | 'danger' | 'info';
 
 export interface ModalProps {
   /** Controls visibility. */
@@ -67,48 +68,50 @@ export interface ModalProps {
    */
   closeOnEscape?: boolean;
   /** Accessible label for the dialog. Use when no visible title is present. */
-  "aria-label"?: string;
+  'aria-label'?: string;
   children: ReactNode;
   /** Optional className for the dialog panel itself. */
   className?: string;
 }
 
-// ── Focusable elements selector (WAI-ARIA focus trap spec) ────────────────────
+// -- Focusable elements selector (WAI-ARIA focus trap spec) --------------------
 
 const FOCUSABLE_SELECTORS = [
-  "a[href]",
-  "button:not([disabled])",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
   "[tabindex]:not([tabindex='-1'])",
-  "details > summary",
-].join(", ");
+  'details > summary',
+].join(', ');
 
 function getFocusableElements(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS));
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS),
+  );
 }
 
-// ── Size styles ───────────────────────────────────────────────────────────────
+// -- Size styles ---------------------------------------------------------------
 
 const sizeStyles: Record<ModalSize, string> = {
-  sm: "max-w-sm",
-  md: "max-w-md",
-  lg: "max-w-lg",
-  xl: "max-w-2xl",
-  full: "max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)]",
+  sm: 'max-w-sm',
+  md: 'max-w-md',
+  lg: 'max-w-lg',
+  xl: 'max-w-2xl',
+  full: 'max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)]',
 };
 
-// ── Modal (root) ──────────────────────────────────────────────────────────────
+// -- Modal (root) --------------------------------------------------------------
 
 export function Modal({
   isOpen,
   onClose,
-  size = "md",
-  variant: _variant = "default",
+  size = 'md',
+  variant: _variant = 'default',
   closeOnBackdrop = true,
   closeOnEscape = true,
-  "aria-label": ariaLabel,
+  'aria-label': ariaLabel,
   children,
   className,
 }: ModalProps) {
@@ -117,25 +120,25 @@ export function Modal({
   // restore focus on close.
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
-  // ── Scroll lock ──────────────────────────────────────────────────────────
+  // -- Scroll lock ----------------------------------------------------------
   useEffect(() => {
     if (!isOpen) return;
     const scrollY = window.scrollY;
-    document.body.style.overflow = "hidden";
-    document.body.style.position = "fixed";
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
     document.body.style.top = `-${scrollY}px`;
-    document.body.style.width = "100%";
+    document.body.style.width = '100%';
 
     return () => {
-      document.body.style.overflow = "";
-      document.body.style.position = "";
-      document.body.style.top = "";
-      document.body.style.width = "";
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
       window.scrollTo(0, scrollY);
     };
   }, [isOpen]);
 
-  // ── Initial focus + return focus ─────────────────────────────────────────
+  // -- Initial focus + return focus -----------------------------------------
   useEffect(() => {
     if (!isOpen) return;
 
@@ -158,16 +161,16 @@ export function Modal({
     };
   }, [isOpen]);
 
-  // ── Focus trap ────────────────────────────────────────────────────────────
+  // -- Focus trap ------------------------------------------------------------
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLDivElement>) => {
-      if (e.key === "Escape" && closeOnEscape) {
+      if (e.key === 'Escape' && closeOnEscape) {
         e.stopPropagation();
         onClose();
         return;
       }
 
-      if (e.key !== "Tab" || !dialogRef.current) return;
+      if (e.key !== 'Tab' || !dialogRef.current) return;
 
       const focusable = getFocusableElements(dialogRef.current);
       if (focusable.length === 0) {
@@ -193,10 +196,10 @@ export function Modal({
         }
       }
     },
-    [closeOnEscape, onClose]
+    [closeOnEscape, onClose],
   );
 
-  // ── Backdrop click ────────────────────────────────────────────────────────
+  // -- Backdrop click --------------------------------------------------------
   const handleBackdropClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {
       // Only close if the click target is the backdrop itself, not
@@ -205,7 +208,7 @@ export function Modal({
         onClose();
       }
     },
-    [closeOnBackdrop, onClose]
+    [closeOnBackdrop, onClose],
   );
 
   if (!isOpen) return null;
@@ -216,13 +219,13 @@ export function Modal({
       role="presentation"
       aria-hidden="false"
       className={[
-        "fixed inset-0 z-[--z-modal] flex items-center justify-center p-4",
+        'fixed inset-0 z-[--z-modal] flex items-center justify-center p-4',
         // Backdrop colour — motion-safe animation
-        "bg-black/50 backdrop-blur-sm",
-        "motion-safe:animate-[fadeIn_150ms_ease-out]",
+        'bg-black/50 backdrop-blur-sm',
+        'motion-safe:animate-[fadeIn_150ms_ease-out]',
       ]
         .filter(Boolean)
-        .join(" ")}
+        .join(' ')}
       onClick={handleBackdropClick}
     >
       {/* Dialog panel */}
@@ -237,28 +240,28 @@ export function Modal({
         onKeyDown={handleKeyDown}
         className={[
           // Layout
-          "relative flex flex-col w-full",
+          'relative flex flex-col w-full',
           // Surface
-          "bg-surface border border-border",
-          "rounded-[--radius-2xl] shadow-[--shadow-xl]",
+          'bg-surface border border-border',
+          'rounded-[--radius-2xl] shadow-[--shadow-xl]',
           // Animation — slides up into view
-          "motion-safe:animate-[slideUp_200ms_cubic-bezier(0.16,1,0.3,1)]",
+          'motion-safe:animate-[slideUp_200ms_cubic-bezier(0.16,1,0.3,1)]',
           // Max height with internal scroll
-          "max-h-[90vh]",
+          'max-h-[90vh]',
           sizeStyles[size],
           className,
         ]
           .filter(Boolean)
-          .join(" ")}
+          .join(' ')}
       >
         {children}
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }
 
-// ── ModalHeader ───────────────────────────────────────────────────────────────
+// -- ModalHeader ---------------------------------------------------------------
 
 export interface ModalHeaderProps extends HTMLAttributes<HTMLDivElement> {
   /** Primary dialog title — used for aria-labelledby. */
@@ -295,11 +298,11 @@ export function ModalHeader({
   return (
     <div
       className={[
-        "flex items-start gap-4 px-6 pt-6 pb-5 border-b border-border shrink-0",
+        'flex items-start gap-4 px-6 pt-6 pb-5 border-b border-border shrink-0',
         className,
       ]
         .filter(Boolean)
-        .join(" ")}
+        .join(' ')}
       {...rest}
     >
       {/* Optional accent icon */}
@@ -333,12 +336,12 @@ export function ModalHeader({
           aria-label="Close dialog"
           onClick={onClose}
           className={[
-            "shrink-0 -mt-1 -mr-1 p-2 rounded-lg",
-            "text-text-muted hover:text-text-primary",
-            "hover:bg-surface-raised transition-colors duration-[--transition-fast]",
-            "outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40",
-            "focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-          ].join(" ")}
+            'shrink-0 -mt-1 -mr-1 p-2 rounded-lg',
+            'text-text-muted hover:text-text-primary',
+            'hover:bg-surface-raised transition-colors duration-[--transition-fast]',
+            'outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40',
+            'focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+          ].join(' ')}
         >
           {/* ×  — rendered as SVG for crisp rendering at all sizes */}
           <svg
@@ -361,16 +364,19 @@ export function ModalHeader({
   );
 }
 
-// ── ModalBody ─────────────────────────────────────────────────────────────────
+// -- ModalBody -----------------------------------------------------------------
 
-export interface ModalBodyProps extends HTMLAttributes<HTMLDivElement> {}
+export type ModalBodyProps = HTMLAttributes<HTMLDivElement>;
 
 export function ModalBody({ className, children, ...rest }: ModalBodyProps) {
   return (
     <div
-      className={["flex-1 overflow-y-auto px-6 py-5 text-text-secondary", className]
+      className={[
+        'flex-1 overflow-y-auto px-6 py-5 text-text-secondary',
+        className,
+      ]
         .filter(Boolean)
-        .join(" ")}
+        .join(' ')}
       {...rest}
     >
       {children}
@@ -378,7 +384,7 @@ export function ModalBody({ className, children, ...rest }: ModalBodyProps) {
   );
 }
 
-// ── ModalFooter ───────────────────────────────────────────────────────────────
+// -- ModalFooter ---------------------------------------------------------------
 
 export interface ModalFooterProps extends HTMLAttributes<HTMLDivElement> {
   /** When true, renders content with space-between layout. Default: false. */
@@ -394,12 +400,12 @@ export function ModalFooter({
   return (
     <div
       className={[
-        "flex flex-wrap items-center gap-3 px-6 pb-6 pt-5 border-t border-border shrink-0",
-        spread ? "justify-between" : "justify-end",
+        'flex flex-wrap items-center gap-3 px-6 pb-6 pt-5 border-t border-border shrink-0',
+        spread ? 'justify-between' : 'justify-end',
         className,
       ]
         .filter(Boolean)
-        .join(" ")}
+        .join(' ')}
       {...rest}
     >
       {children}

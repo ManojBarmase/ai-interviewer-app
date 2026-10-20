@@ -48,12 +48,11 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
+      "@/features/*": ["./src/features/*"],
       "@/components/*": ["./src/components/*"],
       "@/lib/*": ["./src/lib/*"],
-      "@/hooks/*": ["./src/hooks/*"],
-      "@/services/*": ["./src/services/*"],
-      "@/store/*": ["./src/store/*"],
       "@/types/*": ["./src/types/*"],
+      "@/server/*": ["./src/server/*"],
       "@/app/*": ["./src/app/*"]
     }
   },
@@ -65,5 +64,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", ".next", "out", "dist", "build"]
+  "exclude": ["node_modules", ".next", "out", "dist", "build", "generated"]
 }

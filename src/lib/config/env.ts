@@ -20,10 +20,10 @@ function requireEnv(key: string): string {
 }
 
 export const env = {
-  /* ── Public (browser-accessible) ── */
+  /* -- Public (browser-accessible) -- */
   NEXT_PUBLIC_APP_URL: requireEnv('NEXT_PUBLIC_APP_URL'),
 
-  /* ── Server-only (never expose to client) ── */
+  /* -- Server-only (never expose to client) -- */
   NODE_ENV: process.env.NODE_ENV ?? 'development',
 } as const;
 

@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 /**
  * Supabase Browser Client
@@ -17,8 +17,9 @@
  *   use `@/lib/supabase/server` instead.
  */
 
-import { createBrowserClient } from "@supabase/ssr";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { createBrowserClient } from '@supabase/ssr';
+
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * Returns a Supabase client for use in browser (Client Component) code.
@@ -40,8 +41,8 @@ export function createClient(): SupabaseClient {
 
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
-      "Missing Supabase environment variables: " +
-        "NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set in .env.local"
+      'Missing Supabase environment variables: ' +
+        'NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set in .env.local',
     );
   }
 

@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * Supabase Server Client
  *
@@ -7,11 +9,11 @@
  *   - Server Actions  (read + write, full `setAll` implementation)
  *   - Middleware      (use the separate middleware helper instead)
  *
- * ─── Why a new client per request? ──────────────────────────────────────────
+ * --- Why a new client per request? ------------------------------------------
  * The server client is NOT a singleton. A new instance must be created for
  * every request. Sharing one across requests leaks session state between users.
  *
- * ─── Cookie handling ─────────────────────────────────────────────────────────
+ * --- Cookie handling ---------------------------------------------------------
  * `getAll` reads the incoming request cookies.
  * `setAll` writes refreshed tokens back to the response AND sets the required
  *  cache-control headers (private, no-store) so CDNs never cache auth cookies.
@@ -24,15 +26,17 @@
  * pattern is explicitly avoided as it misses important edge-cases and will be
  * removed in a future major version of @supabase/ssr.
  *
- * ─── Security note ───────────────────────────────────────────────────────────
+ * --- Security note -----------------------------------------------------------
  * Always call `supabase.auth.getUser()` (not `getSession()`) when you need the
  * authenticated user server-side. `getUser()` re-validates the JWT against the
  * Supabase Auth server on every call, while `getSession()` trusts the cookie.
  */
 
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { cookies } from 'next/headers';
+
+import { createServerClient } from '@supabase/ssr';
+
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 function getEnvVars() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -40,8 +44,8 @@ function getEnvVars() {
 
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
-      "Missing Supabase environment variables: " +
-        "NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set in .env.local"
+      'Missing Supabase environment variables: ' +
+        'NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set in .env.local',
     );
   }
 
@@ -123,12 +127,12 @@ export async function createRouteHandlerClient(): Promise<{
       setAll(cookiesToSet, cacheHeaders) {
         // Write refreshed auth cookies onto the response.
         cookiesToSet.forEach(({ name, value, options }) =>
-          cookieStore.set(name, value, options)
+          cookieStore.set(name, value, options),
         );
         // Apply required cache-control headers (private, no-store, etc.) so
         // CDNs/reverse proxies never cache responses containing auth cookies.
         Object.entries(cacheHeaders).forEach(([key, value]) =>
-          response.headers.set(key, value)
+          response.headers.set(key, value),
         );
       },
     },
