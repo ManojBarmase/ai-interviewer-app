@@ -11,7 +11,11 @@ import {
 } from '../../constants/personas';
 import { useInterviewStore } from '../../store/useInterviewStore';
 
-export function WaitingRoom({ onJoin }: { onJoin: () => void }) {
+export interface WaitingRoomProps {
+  onJoin: () => void;
+}
+
+export function WaitingRoom({ onJoin }: WaitingRoomProps) {
   const router = useRouter();
   const { candidateContext } = useInterviewStore();
 
@@ -39,7 +43,7 @@ export function WaitingRoom({ onJoin }: { onJoin: () => void }) {
             className="object-cover object-top"
           />
           {/* Gradient Overlay for seamless blend */}
-          <div className="absolute inset-0 bg-gradient-to-t from-[hsl(222,24%,11%)] via-transparent to-transparent" />
+          <div className="absolute inset-0 bg-linear-to-t from-[hsl(222,24%,11%)] via-transparent to-transparent" />
         </div>
 
         {/* Info Section */}

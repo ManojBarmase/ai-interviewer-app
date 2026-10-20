@@ -5,7 +5,9 @@
  */
 import { QuestionBankClient } from '@/features/question-bank';
 
-export const metadata = {
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
   title: 'Question Bank — AI Mock Interviewer',
   description:
     '48 curated interview questions with model answers and key concepts.',

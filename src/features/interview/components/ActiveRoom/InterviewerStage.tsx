@@ -34,7 +34,7 @@ export function InterviewerStage({
   isMicMuted,
 }: InterviewerStageProps) {
   return (
-    <div className="relative flex-1 bg-gradient-to-b from-[hsl(222,30%,12%)] to-[#0b0c10] overflow-hidden flex items-center justify-center">
+    <div className="relative flex-1 bg-linear-to-b from-[hsl(222,30%,12%)] to-[#0b0c10] overflow-hidden flex items-center justify-center">
       {/* ── Top Left: Interviewer Identity Badge ── */}
       <div className="absolute top-4 left-4 z-10 px-4 py-2 bg-[#0b0c10]/80 backdrop-blur-md rounded-full border border-white/5 flex items-center gap-2 shadow-sm">
         <span className="text-sm font-semibold text-white/90">

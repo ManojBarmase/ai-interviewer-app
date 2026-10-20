@@ -202,7 +202,7 @@ export function LoginForm() {
           href="/"
           className="group inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/5 border border-white/10 hover:border-brand-500/30 transition-all duration-200 mb-5"
         >
-          <div className="w-6 h-6 rounded-md bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center shadow-sm">
+          <div className="w-6 h-6 rounded-md bg-linear-to-tr from-brand-600 to-indigo-500 flex items-center justify-center shadow-sm">
             <Zap size={14} className="text-white" />
           </div>
           <span className="text-xs font-semibold text-white/80 group-hover:text-white transition-colors">
@@ -226,7 +226,7 @@ export function LoginForm() {
       {/* ── Main Auth Card ── */}
       <div className="bg-[hsl(222,28%,10%)]/90 border border-white/10 rounded-2xl p-6 sm:p-8 backdrop-blur-2xl shadow-2xl relative overflow-hidden">
         {/* Subtle accent line across the top */}
-        <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-brand-500/80 to-transparent" />
+        <div className="absolute top-0 left-0 right-0 h-0.5 bg-linear-to-r from-transparent via-brand-500/80 to-transparent" />
 
         {/* ── Tabs (Sign In / Create Account) ── */}
         <div className="flex rounded-xl bg-white/5 p-1 mb-6 border border-white/5">
@@ -395,7 +395,7 @@ export function LoginForm() {
             type="submit"
             id="auth-submit-button"
             disabled={isLoading || isDemoLoading}
-            className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-brand-600 via-brand-500 to-indigo-500 hover:from-brand-500 hover:to-indigo-400 text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-lg shadow-brand-500/20 active:scale-[0.99] transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+            className="w-full mt-2 py-3 px-4 rounded-xl bg-linear-to-r from-brand-600 via-brand-500 to-indigo-500 hover:from-brand-500 hover:to-indigo-400 text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-lg shadow-brand-500/20 active:scale-[0.99] transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
           >
             {isLoading ? (
               <>

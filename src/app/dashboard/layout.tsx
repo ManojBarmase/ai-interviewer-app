@@ -7,9 +7,9 @@ import { DashboardSidebar } from '@/components/layouts/DashboardSidebar/Dashboar
 
 export default async function DashboardLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
+}>) {
   const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',

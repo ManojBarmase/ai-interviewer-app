@@ -829,7 +829,7 @@ export function DashboardClient({
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1200px] mx-auto space-y-6">
       {/* ═══ HERO BANNER ═══════════════════════════════════════════════════ */}
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[hsl(222,24%,13%)] to-[hsl(222,28%,10%)] border border-white/5 p-6 sm:p-8 lg:p-10">
+      <section className="relative overflow-hidden rounded-2xl bg-linear-to-br from-[hsl(222,24%,13%)] to-[hsl(222,28%,10%)] border border-white/5 p-6 sm:p-8 lg:p-10">
         <div className="flex flex-col lg:flex-row items-start lg:items-center gap-6 lg:gap-12">
           {/* Text content */}
           <div className="flex-1 min-w-0">
@@ -869,7 +869,7 @@ export function DashboardClient({
           </div>
 
           {/* AI Avatar */}
-          <div className="hidden lg:block flex-shrink-0">
+          <div className="hidden lg:block shrink-0">
             <div className="relative w-[200px] h-[200px] rounded-2xl overflow-hidden">
               <Image
                 src="/ai-avatar.jpg"
@@ -956,7 +956,7 @@ export function DashboardClient({
           </p>
           <div className="w-full h-1.5 rounded-full bg-white/5 mb-4 overflow-hidden">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-amber-500 to-orange-500"
+              className="h-full rounded-full bg-linear-to-r from-amber-500 to-orange-500"
               style={{ width: '81%' }}
             />
           </div>

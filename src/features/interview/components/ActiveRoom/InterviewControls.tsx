@@ -217,7 +217,7 @@ export function InterviewControls({
 
       {/* ── End Interview Confirmation Modal ── */}
       {showEndModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-w-md bg-[#161821] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 bg-[#161821]">
               <h3 className="text-xl font-bold text-white">
