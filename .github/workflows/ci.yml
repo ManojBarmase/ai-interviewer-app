@@ -1,57 +1,172 @@
-name: Enterprise CI Pipeline
+name: Enterprise CI/CD Pipeline
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, develop]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, develop]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: github.workflow-{{ github.ref }}
   cancel-in-progress: true
 
 env:
   CI: true
-  NEXT_TELEMETRY_DISABLED: 1
   NODE_ENV: test
-  NEXT_PUBLIC_APP_URL: http://localhost:3000
-  NEXT_PUBLIC_APP_ENV: test
-  NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy
-  GROQ_API_KEY: gsk_dummy_key_for_ci_pipeline
-  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mock_ci_db
-  DEMO_MODE_ENABLED: true
+  NEXT_TELEMETRY_DISABLED: 1
 
 jobs:
+  # ── JOB 1: Security Audit ────────────────────────────────────────────────
+  security-audit:
+    name: 🔒 Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install deps
+        run: npm ci --legacy-peer-deps
+      - name: NPM Audit (high severity)
+        run: npm audit --audit-level=high
+        continue-on-error: true  # Don't block CI on audit, but report it
+      - name: Check for secrets in code
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+  # ── JOB 2: Quality Gate ───────────────────────────────────────────────────
   quality-gate:
-    name: Type Check, Lint, Test & Build
+    name: ✅ Type Check, Lint & Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.CI_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy' }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY || 'gsk_ci_dummy_key' }}
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci_db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - run: npx prisma generate
+      - name: Type Check
+        run: npm run type-check
+      - name: Lint
+        run: npm run lint
+      - name: Format Check
+        run: npm run format:check
+
+  # ── JOB 3: Unit Tests ─────────────────────────────────────────────────────
+  unit-tests:
+    name: 🧪 Unit Tests & Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [quality-gate]
+    env:
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy
+      GROQ_API_KEY: gsk_ci_dummy_key
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci_db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - run: npx prisma generate
+      - name: Run unit tests with coverage
+        run: npm run test:coverage
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+      - name: Coverage summary comment (on PRs)
+        uses: davelosert/vitest-coverage-report-action@v2
+        if: github.event_name == 'pull_request'
+        with:
+          json-summary-path: coverage/coverage-summary.json
+        continue-on-error: true
+
+  # ── JOB 4: Build ──────────────────────────────────────────────────────────
+  build:
+    name: 🏗️ Production Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
+    needs: [quality-gate]
+    env:
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy
+      GROQ_API_KEY: gsk_ci_dummy_key
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci_db
     steps:
-      - name: ⬇️ Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: 🟢 Setup Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: 📦 Install Dependencies
-        run: npm ci --legacy-peer-deps
-
-      - name: ⚙️ Generate Prisma Client
-        run: npx prisma generate
-
-      - name: 🔍 Type Check (TypeScript)
-        run: npm run type-check
-
-      - name: 🧹 Lint (ESLint)
-        run: npm run lint
-
-      - name: 🧪 Unit Tests (Vitest)
-        run: npm run test
-
-      - name: 🏗️ Production Build (Next.js)
+          node-version: 20
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - run: npx prisma generate
+      - name: Build Next.js app
         run: npm run build
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextjs-build
+          path: .next/
+          retention-days: 1
+
+  # ── JOB 5: E2E Tests (only on push to main) ────────────────────────────────
+  e2e-tests:
+    name: 🎭 E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    env:
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL || 'https://example.supabase.co' }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy' }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY || 'gsk_ci_dummy_key' }}
+      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/ci_db' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - run: npx prisma generate
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+      - name: Run E2E tests
+        run: npm run test:e2e
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  # ── JOB 6: Deploy Summary ─────────────────────────────────────────────────
+  notify-success:
+    name: 📣 Pipeline Success
+    runs-on: ubuntu-latest
+    needs: [security-audit, quality-gate, unit-tests, build]
+    if: success()
+    steps:
+      - name: Pipeline passed
+        run: echo "✅ All checks passed. Ready for deployment."
