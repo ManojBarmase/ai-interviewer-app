@@ -51,6 +51,16 @@ export function requireEnv(key: string, customValue?: string): string {
   }
 
   if (value === undefined || value === '') {
+    if (key === 'NEXT_PUBLIC_APP_URL') {
+      const fallbackUrl = process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : process.env.CI
+          ? 'http://localhost:3000'
+          : '';
+      if (fallbackUrl) {
+        return fallbackUrl;
+      }
+    }
     if (process.env.NODE_ENV === 'test') {
       return `mock-${key.toLowerCase()}`;
     }
@@ -119,7 +129,14 @@ export function validateEnv(): void {
   ] as const;
 
   for (const key of requiredPublic) {
-    const val = process.env[key];
+    let val = process.env[key];
+    if ((val === undefined || val === '') && key === 'NEXT_PUBLIC_APP_URL') {
+      val = process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : process.env.CI
+          ? 'http://localhost:3000'
+          : undefined;
+    }
     if (val === undefined || val === '') {
       missing.push(key);
     }

@@ -14,10 +14,13 @@ env:
   CI: true
   NEXT_TELEMETRY_DISABLED: 1
   NODE_ENV: test
+  NEXT_PUBLIC_APP_URL: http://localhost:3000
+  NEXT_PUBLIC_APP_ENV: test
   NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
   NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy
   GROQ_API_KEY: gsk_dummy_key_for_ci_pipeline
   DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mock_ci_db
+  DEMO_MODE_ENABLED: true
 
 jobs:
   quality-gate:
@@ -29,10 +32,10 @@ jobs:
       - name: ⬇️ Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🟢 Setup Node.js 20
+      - name: 🟢 Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: 📦 Install Dependencies
