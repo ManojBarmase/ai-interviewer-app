@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -52,7 +52,7 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci_db
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -79,7 +79,7 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci_db
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -114,7 +114,7 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ci_db
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -145,7 +145,7 @@ jobs:
       DEMO_MODE_ENABLED: true
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
