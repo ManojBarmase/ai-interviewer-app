@@ -59,6 +59,11 @@ const LOGIN_PATH = '/login';
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
+  // Health check endpoint requires no auth and should bypass proxy logic immediately
+  if (pathname === '/api/health') {
+    return NextResponse.next();
+  }
+
   // -- 1. Build a mutable response that we will return. -----------------------
   // We start with NextResponse.next() so the request continues normally unless
   // we decide to redirect. Cookie writes are attached to this response.

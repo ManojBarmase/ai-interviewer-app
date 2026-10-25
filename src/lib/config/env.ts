@@ -92,6 +92,8 @@ export function optionalEnv(key: string, defaultValue = ''): string {
   let value: string | undefined;
   if (key === 'NEXT_PUBLIC_APP_ENV') {
     value = process.env.NEXT_PUBLIC_APP_ENV;
+  } else if (key === 'NEXT_PUBLIC_SENTRY_DSN') {
+    value = process.env.NEXT_PUBLIC_SENTRY_DSN;
   } else {
     value = process.env[key];
   }
@@ -200,6 +202,8 @@ export const env = {
     'NEXT_PUBLIC_APP_ENV',
     process.env.NEXT_PUBLIC_APP_ENV || 'development',
   ),
+
+  NEXT_PUBLIC_SENTRY_DSN: optionalEnv('NEXT_PUBLIC_SENTRY_DSN', ''),
 
   /* ─── SERVER (never expose to client) ─── */
   /**

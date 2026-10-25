@@ -2,6 +2,7 @@ import 'server-only';
 
 import { NextResponse } from 'next/server';
 
+import * as Sentry from '@sentry/nextjs';
 import { z } from 'zod';
 
 import { createSessionLogger } from '@/lib/logger';
@@ -118,6 +119,7 @@ export function handleApiError(
 
   const err = error instanceof Error ? error : new Error(String(error));
   activeLogger.error({ err }, err.message || 'Unhandled internal error');
+  Sentry.captureException(err);
 
   return fail(
     process.env.NODE_ENV === 'production'
