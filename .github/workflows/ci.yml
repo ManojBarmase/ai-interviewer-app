@@ -33,7 +33,7 @@ jobs:
         run: npm audit --audit-level=high
         continue-on-error: true  # Don't block CI on audit, but report it
       - name: Check for secrets in code
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         continue-on-error: true
