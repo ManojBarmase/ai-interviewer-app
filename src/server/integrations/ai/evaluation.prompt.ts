@@ -1,5 +1,12 @@
 import 'server-only';
 
+import {
+  MAX_RESUME_LENGTH,
+  MAX_ROLE_LENGTH,
+  MAX_TECH_STACK_ITEM_LENGTH,
+  sanitizePromptInput,
+} from '@/server/utils/sanitize-prompt-input';
+
 export interface CandidateContext {
   role?: string;
   experience?: string;
@@ -24,16 +31,25 @@ You must objectively evaluate the candidate's technical skills, communication ab
 Return a structured JSON response strictly adhering to the required schema. Ensure scores are between 1.0 and 10.0.`;
 
   if (candidateContext) {
-    const roleText = candidateContext.role || 'Software Engineer';
+    const roleText = candidateContext.role
+      ? sanitizePromptInput(candidateContext.role, MAX_ROLE_LENGTH)
+      : 'Software Engineer';
     const expText =
       candidateContext.experience || candidateContext.level || 'Mid-Level';
     const techText = Array.isArray(candidateContext.techStack)
-      ? candidateContext.techStack.join(', ')
+      ? candidateContext.techStack
+          .map((item) => sanitizePromptInput(item, MAX_TECH_STACK_ITEM_LENGTH))
+          .filter(Boolean)
+          .join(', ') || 'General'
       : 'General';
     systemInstruction += `\n\nContext about the candidate:\n- Role: ${roleText}\n- Experience: ${expText}\n- Tech Stack: ${techText}\nPlease judge their performance strictly against these exact criteria and seniority expectations.`;
 
     if (candidateContext.resumeText) {
-      systemInstruction += `\n\nAdditionally, here is their Extracted Resume:\n"""\n${candidateContext.resumeText}\n"""\nEvaluate if their answers align with the claims made in their resume.`;
+      const sanitizedResume = sanitizePromptInput(
+        candidateContext.resumeText,
+        MAX_RESUME_LENGTH,
+      );
+      systemInstruction += `\n\nAdditionally, here is their Extracted Resume:\n"""\n${sanitizedResume}\n"""\nEvaluate if their answers align with the claims made in their resume.`;
     }
   }
 
@@ -105,11 +121,11 @@ export function buildUserPromptContent(
       structuredTurns
         .map(
           (t, idx) =>
-            `--- QUESTION ${idx + 1} OF ${structuredTurns.length} ---\nInterviewer: ${t.question}\nCandidate: ${t.rawTranscript || '(Silence / Skipped)'}`,
+            `--- QUESTION ${idx + 1} OF ${structuredTurns.length} ---\nInterviewer: ${sanitizePromptInput(t.question, 1000)}\nCandidate: ${t.rawTranscript ? sanitizePromptInput(t.rawTranscript, 4000) : '(Silence / Skipped)'}`,
         )
         .join('\n\n')
     );
   }
 
-  return fallbackTranscript;
+  return sanitizePromptInput(fallbackTranscript, 8000);
 }

@@ -2,14 +2,16 @@ import type { NextRequest } from 'next/server';
 
 import { createServerClient } from '@supabase/ssr';
 
+import { env } from '@/lib/config/env';
+import { DEMO_USER_ID } from '@/proxy';
 import { rateLimit } from '@/server/integrations/cache/ratelimit';
 import { chatService } from '@/server/services/chat.service';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest): Promise<Response> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const url = env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const supabase =
     url && key
       ? createServerClient(url, key, {
@@ -18,8 +20,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       : null;
   const user = supabase ? (await supabase.auth.getUser()).data.user : null;
   const isDemo = req.cookies.get('demo_candidate_session')?.value === 'true';
-  const userId =
-    user?.id ?? (isDemo ? '00000000-0000-0000-0000-000000000000' : null);
+  const userId = user?.id ?? (isDemo ? DEMO_USER_ID : null);
 
   if (!userId) {
     return new Response(

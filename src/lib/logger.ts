@@ -1,13 +1,13 @@
 import pino from 'pino';
 
+import { env } from '@/lib/config/env';
+
 /**
  * Enterprise Structured Logger using Pino.
  * Emits JSON-formatted structured logs with timestamps and log levels.
  */
 export const logger = pino({
-  level:
-    process.env.LOG_LEVEL ||
-    (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
+  level: env.LOG_LEVEL || (env.NODE_ENV === 'production' ? 'info' : 'debug'),
   formatters: {
     level: (label) => ({ level: label }),
   },

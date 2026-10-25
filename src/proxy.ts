@@ -35,6 +35,17 @@ import type { NextRequest } from 'next/server';
 
 import { createServerClient } from '@supabase/ssr';
 
+import { env } from '@/lib/config/env';
+
+/**
+ * Synthetic user ID assigned to reviewers and recruiters operating in demo mode.
+ * Enables zero-setup instant walkthroughs without external email verification.
+ */
+export const DEMO_USER_ID = '00000000-0000-0000-0000-000000000000';
+
+/** 24-hour expiration duration in milliseconds for demo candidate sessions */
+const DEMO_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
 /** Routes that require an authenticated session. */
 const PROTECTED_PREFIXES = [
   '/dashboard',
@@ -57,8 +68,8 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
   // -- 2. Create the Supabase server client. ----------------------------------
   // A new client MUST be created per request — never reuse across requests.
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+  const supabaseAnonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
       /**
@@ -115,8 +126,24 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isDemoSession =
-    request.cookies.get('demo_candidate_session')?.value === 'true';
+  const demoCookie = request.cookies.get('demo_candidate_session')?.value;
+  const demoCreatedAt = request.cookies.get('demo_session_created_at')?.value;
+
+  let isDemoSession = false;
+  if (demoCookie === 'true') {
+    const createdAtMs = demoCreatedAt ? parseInt(demoCreatedAt, 10) : NaN;
+    const isExpired =
+      !createdAtMs || Date.now() - createdAtMs > DEMO_SESSION_MAX_AGE_MS;
+
+    if (isExpired) {
+      isDemoSession = false;
+      response.cookies.delete('demo_candidate_session');
+      response.cookies.delete('demo_session_created_at');
+    } else {
+      isDemoSession = true;
+    }
+  }
+
   const isAuthenticated = !!user || isDemoSession;
 
   // -- 4. Enforce route protection. -------------------------------------------
@@ -139,20 +166,30 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   if (isProtected && !isAuthenticated) {
     // Enterprise Standard: API requests must return 401 JSON instead of an HTML redirect
     if (pathname.startsWith('/api/')) {
-      return NextResponse.json(
+      const apiResponse = NextResponse.json(
         {
           error:
             'Unauthorized. Authentication required to access this endpoint.',
         },
         { status: 401 },
       );
+      if (demoCookie === 'true' && !isDemoSession) {
+        apiResponse.cookies.delete('demo_candidate_session');
+        apiResponse.cookies.delete('demo_session_created_at');
+      }
+      return apiResponse;
     }
 
     // Preserve the originally requested URL as a `redirectTo` query param so
     // the login page can redirect back after a successful sign-in.
     const loginUrl = new URL(LOGIN_PATH, request.url);
     loginUrl.searchParams.set('redirectTo', pathname);
-    return NextResponse.redirect(loginUrl);
+    const redirectResponse = NextResponse.redirect(loginUrl);
+    if (demoCookie === 'true' && !isDemoSession) {
+      redirectResponse.cookies.delete('demo_candidate_session');
+      redirectResponse.cookies.delete('demo_session_created_at');
+    }
+    return redirectResponse;
   }
 
   // -- 5. Return the (possibly cookie-updated) response. ---------------------

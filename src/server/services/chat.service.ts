@@ -2,11 +2,18 @@ import 'server-only';
 
 import Groq from 'groq-sdk';
 
+import { env } from '@/lib/config/env';
 import { createSessionLogger } from '@/lib/logger';
 import {
   BadRequestError,
   ExternalServiceError,
 } from '@/server/errors/AppError';
+import {
+  MAX_RESUME_LENGTH,
+  MAX_ROLE_LENGTH,
+  MAX_TECH_STACK_ITEM_LENGTH,
+  sanitizePromptInput,
+} from '@/server/utils/sanitize-prompt-input';
 
 export interface ChatMessage {
   role: 'user' | 'model';
@@ -159,7 +166,7 @@ export class ChatService {
       userId,
     });
 
-    const apiKey = process.env.GROQ_API_KEY;
+    const apiKey = env.GROQ_API_KEY;
     if (!apiKey || apiKey === 'your-groq-api-key-here') {
       throw new ExternalServiceError(
         'Groq API key not configured.',
@@ -187,10 +194,29 @@ export class ChatService {
 
           let finalSystemPrompt = SYSTEM_PROMPT;
           if (chatRequest.candidateContext) {
-            finalSystemPrompt += `\n\nCandidate Profile:\n- Target Role: ${chatRequest.candidateContext.role || 'Software Engineer'}\n- Experience Level: ${chatRequest.candidateContext.experience || 'Mid-Level'}\n- Tech Stack: ${chatRequest.candidateContext.techStack?.join(', ') || 'General'}\n\nPlease ensure your questions are highly tailored to this exact candidate profile. Ask deep, specific technical questions matching their selected tech stack and experience level.`;
+            const role = sanitizePromptInput(
+              chatRequest.candidateContext.role || 'Software Engineer',
+              MAX_ROLE_LENGTH,
+            );
+            const experience =
+              chatRequest.candidateContext.experience || 'Mid-Level';
+            const techStack = chatRequest.candidateContext.techStack
+              ? chatRequest.candidateContext.techStack
+                  .map((item) =>
+                    sanitizePromptInput(item, MAX_TECH_STACK_ITEM_LENGTH),
+                  )
+                  .filter(Boolean)
+                  .join(', ')
+              : 'General';
+
+            finalSystemPrompt += `\n\nCandidate Profile:\n- Target Role: ${role}\n- Experience Level: ${experience}\n- Tech Stack: ${techStack || 'General'}\n\nPlease ensure your questions are highly tailored to this exact candidate profile. Ask deep, specific technical questions matching their selected tech stack and experience level.`;
 
             if (chatRequest.candidateContext.resumeText) {
-              finalSystemPrompt += `\n\nCandidate's Extracted Resume:\n"""\n${chatRequest.candidateContext.resumeText}\n"""\n\nPlease incorporate specific details, projects, or achievements from their resume into your interview questions. Make it feel like you have thoroughly read their CV.`;
+              const sanitizedResume = sanitizePromptInput(
+                chatRequest.candidateContext.resumeText,
+                MAX_RESUME_LENGTH,
+              );
+              finalSystemPrompt += `\n\nCandidate's Extracted Resume:\n"""\n${sanitizedResume}\n"""\n\nPlease incorporate specific details, projects, or achievements from their resume into your interview questions. Make it feel like you have thoroughly read their CV.`;
             }
           }
 
@@ -258,7 +284,7 @@ export class ChatService {
               type: 'error',
               code,
               message:
-                process.env.NODE_ENV === 'development'
+                env.NODE_ENV === 'development'
                   ? err.message
                   : 'An error occurred while generating the response.',
             });

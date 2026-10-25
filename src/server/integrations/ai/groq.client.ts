@@ -2,9 +2,10 @@ import 'server-only';
 
 import Groq from 'groq-sdk';
 
+import { env } from '@/lib/config/env';
 import { ExternalServiceError } from '@/server/errors/AppError';
 
-export const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+export const groq = new Groq({ apiKey: env.GROQ_API_KEY });
 
 /**
  * Invokes Groq LLM completion with JSON mode and deterministic temperature

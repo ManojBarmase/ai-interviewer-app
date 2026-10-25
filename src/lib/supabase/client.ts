@@ -19,6 +19,8 @@
 
 import { createBrowserClient } from '@supabase/ssr';
 
+import { env } from '@/lib/config/env';
+
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
@@ -36,8 +38,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  * ```
  */
 export function createClient(): SupabaseClient {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
