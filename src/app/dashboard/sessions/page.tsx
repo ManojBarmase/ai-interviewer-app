@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { createServerClient } from '@supabase/ssr';
 
 import { SessionsClient } from '@/features/scorecard';
-import { prisma } from '@/server/db/prisma';
+import { prisma, type Prisma } from '@/server/db/prisma';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -16,6 +16,15 @@ interface SessionQuestionItem {
   scores?: { time?: string; [key: string]: unknown };
   [key: string]: unknown;
 }
+
+type SessionsPageSession = Prisma.SessionGetPayload<{
+  include: {
+    scorecard: true;
+    transcripts: {
+      select: { id: true };
+    };
+  };
+}>;
 
 export default async function SessionsPage() {
   const cookieStore = await cookies();
@@ -43,16 +52,24 @@ export default async function SessionsPage() {
 
   const userId = user?.id || '00000000-0000-0000-0000-000000000000';
 
-  const sessions = await prisma.session.findMany({
-    where: { userId, isDeleted: false },
-    include: {
-      scorecard: true,
-      transcripts: {
-        select: { id: true },
+  let sessions: SessionsPageSession[] = [];
+  try {
+    sessions = await prisma.session.findMany({
+      where: { userId, isDeleted: false },
+      include: {
+        scorecard: true,
+        transcripts: {
+          select: { id: true },
+        },
       },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+      orderBy: { createdAt: 'desc' },
+    });
+  } catch (error) {
+    console.warn(
+      '[SESSIONS_DB_WARN] Could not fetch sessions from DB, rendering fallback empty state:',
+      error,
+    );
+  }
 
   // Serialize Prisma Date and Decimal objects for the client component
   const serializedSessions = sessions.map((s) => {

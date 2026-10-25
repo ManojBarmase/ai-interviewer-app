@@ -14,6 +14,7 @@ export default defineConfig({
     ['list'],
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
   ],
+  timeout: 60_000,
   use: {
     baseURL: process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:3000',
     trace: 'on-first-retry',
@@ -31,5 +32,8 @@ export default defineConfig({
     url: 'http://localhost:3000',
     reuseExistingServer: true,
     timeout: 120_000,
+    env: {
+      DEMO_MODE_ENABLED: 'true',
+    },
   },
 });

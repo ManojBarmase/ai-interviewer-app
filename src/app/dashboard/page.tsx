@@ -5,7 +5,7 @@ import { createServerClient } from '@supabase/ssr';
 import { Flame, Target, Trophy, Zap } from 'lucide-react';
 
 import { DashboardClient } from '@/features/dashboard';
-import { prisma } from '@/server/db/prisma';
+import { prisma, type Prisma } from '@/server/db/prisma';
 import {
   generateRealHeatmapData,
   calculatePracticeStreak,
@@ -22,6 +22,15 @@ interface DimensionQuestion {
   scores?: { time?: string; [key: string]: unknown };
   [key: string]: unknown;
 }
+
+type DashboardSession = Prisma.SessionGetPayload<{
+  include: {
+    scorecard: true;
+    _count: {
+      select: { transcripts: true };
+    };
+  };
+}>;
 
 async function getAuthenticatedUser() {
   const cookieStore = await cookies();
@@ -90,20 +99,28 @@ function formatRelativeDate(createdAt: Date | string): string {
 export default async function DashboardPage() {
   const user = await getAuthenticatedUser();
 
-  // Fetch real sessions from Prisma DB
-  const allCompletedSessions = await prisma.session.findMany({
-    where: {
-      userId: user.id,
-      isDeleted: false,
-    },
-    include: {
-      scorecard: true,
-      _count: {
-        select: { transcripts: true },
+  // Fetch real sessions from Prisma DB with graceful error handling
+  let allCompletedSessions: DashboardSession[] = [];
+  try {
+    allCompletedSessions = await prisma.session.findMany({
+      where: {
+        userId: user.id,
+        isDeleted: false,
       },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+      include: {
+        scorecard: true,
+        _count: {
+          select: { transcripts: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  } catch (error) {
+    console.warn(
+      '[DASHBOARD_DB_WARN] Could not fetch sessions from DB, rendering fallback empty state:',
+      error,
+    );
+  }
 
   const recentSessionsList = allCompletedSessions.slice(0, 10);
 

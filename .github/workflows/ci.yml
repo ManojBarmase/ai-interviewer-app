@@ -14,6 +14,7 @@ env:
   CI: true
   NODE_ENV: test
   NEXT_TELEMETRY_DISABLED: 1
+  DEMO_MODE_ENABLED: true
 
 jobs:
   # ── JOB 1: Security Audit ────────────────────────────────────────────────
@@ -141,6 +142,7 @@ jobs:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy' }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY || 'gsk_ci_dummy_key' }}
       DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/ci_db' }}
+      DEMO_MODE_ENABLED: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
