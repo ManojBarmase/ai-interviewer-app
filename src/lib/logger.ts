@@ -5,6 +5,10 @@ import { env } from '@/lib/config/env';
 /**
  * Enterprise Structured Logger using Pino.
  * Emits JSON-formatted structured logs with timestamps and log levels.
+ *
+ * GDPR & SOC2 Compliance:
+ * Sensitive fields (PII, credentials, auth tokens, cookies, API keys) are
+ * automatically redacted from logs to prevent inadvertent data leakage to log sinks.
  */
 export const logger = pino({
   level: env.LOG_LEVEL || (env.NODE_ENV === 'production' ? 'info' : 'debug'),
@@ -12,6 +16,21 @@ export const logger = pino({
     level: (label) => ({ level: label }),
   },
   timestamp: pino.stdTimeFunctions.isoTime,
+  redact: {
+    paths: [
+      'email',
+      'userEmail',
+      '*.email',
+      'password',
+      'token',
+      'apiKey',
+      'GROQ_API_KEY',
+      'authorization',
+      'cookie',
+      '*.password',
+    ],
+    censor: '[REDACTED]',
+  },
   browser: {
     asObject: true,
   },

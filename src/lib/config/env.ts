@@ -52,11 +52,13 @@ export function requireEnv(key: string, customValue?: string): string {
 
   if (value === undefined || value === '') {
     if (key === 'NEXT_PUBLIC_APP_URL') {
-      const fallbackUrl = process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : process.env.CI
-          ? 'http://localhost:3000'
-          : '';
+      const fallbackUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : process.env.CI
+            ? 'http://localhost:3000'
+            : '';
       if (fallbackUrl) {
         return fallbackUrl;
       }
@@ -133,11 +135,13 @@ export function validateEnv(): void {
   for (const key of requiredPublic) {
     let val = process.env[key];
     if ((val === undefined || val === '') && key === 'NEXT_PUBLIC_APP_URL') {
-      val = process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : process.env.CI
-          ? 'http://localhost:3000'
-          : undefined;
+      val = process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : process.env.CI
+            ? 'http://localhost:3000'
+            : undefined;
     }
     if (val === undefined || val === '') {
       missing.push(key);
@@ -243,9 +247,9 @@ export const env = {
 
   /**
    * Controls whether 1-click demo candidate authentication is permitted.
-   * @default 'false'
+   * @default 'true'
    */
-  DEMO_MODE_ENABLED: optionalEnv('DEMO_MODE_ENABLED', 'false'),
+  DEMO_MODE_ENABLED: optionalEnv('DEMO_MODE_ENABLED', 'true'),
 
   /**
    * Node execution environment ('development' | 'production' | 'test').

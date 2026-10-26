@@ -172,11 +172,14 @@ export function LoginForm() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       });
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.message || 'Failed to initialize demo session');
+        throw new Error(
+          data.message || data.error || 'Failed to initialize demo session',
+        );
       }
 
       setSuccess('Demo workspace activated! Loading dashboard...');
