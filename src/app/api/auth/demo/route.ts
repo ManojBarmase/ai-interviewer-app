@@ -1,8 +1,13 @@
 import { cookies } from 'next/headers';
 import { type NextRequest, NextResponse } from 'next/server';
 
+import { createDemoSignature } from '@/lib/auth/demo-session';
 import { env } from '@/lib/config/env';
-import { DEMO_SESSION_COOKIE } from '@/lib/constants';
+import {
+  DEMO_SESSION_COOKIE,
+  DEMO_SESSION_CREATED_AT_COOKIE,
+  DEMO_SESSION_SIGNATURE_COOKIE,
+} from '@/lib/constants';
 
 /**
  * Enterprise Demo Session Handler
@@ -166,18 +171,20 @@ export async function POST(request: NextRequest) {
 
   const cookieStore = await cookies();
   const createdAt = Date.now().toString();
+  const signature = createDemoSignature(createdAt);
 
   const cookieOptions = {
     path: '/',
     httpOnly: true,
-    secure: env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax' as const,
     maxAge: 60 * 60 * 24, // 24 hours
   };
 
-  // 3. Set HttpOnly, secure session cookies on both cookie store and response
+  // 3. Set HttpOnly, secure session cookies with HMAC-SHA256 signature
   cookieStore.set(DEMO_SESSION_COOKIE, 'true', cookieOptions);
-  cookieStore.set('demo_session_created_at', createdAt, cookieOptions);
+  cookieStore.set(DEMO_SESSION_CREATED_AT_COOKIE, createdAt, cookieOptions);
+  cookieStore.set(DEMO_SESSION_SIGNATURE_COOKIE, signature, cookieOptions);
 
   const response = NextResponse.json(
     {
@@ -192,7 +199,12 @@ export async function POST(request: NextRequest) {
   );
 
   response.cookies.set(DEMO_SESSION_COOKIE, 'true', cookieOptions);
-  response.cookies.set('demo_session_created_at', createdAt, cookieOptions);
+  response.cookies.set(
+    DEMO_SESSION_CREATED_AT_COOKIE,
+    createdAt,
+    cookieOptions,
+  );
+  response.cookies.set(DEMO_SESSION_SIGNATURE_COOKIE, signature, cookieOptions);
 
   return response;
 }
@@ -200,7 +212,8 @@ export async function POST(request: NextRequest) {
 export async function DELETE() {
   const cookieStore = await cookies();
   cookieStore.delete(DEMO_SESSION_COOKIE);
-  cookieStore.delete('demo_session_created_at');
+  cookieStore.delete(DEMO_SESSION_CREATED_AT_COOKIE);
+  cookieStore.delete(DEMO_SESSION_SIGNATURE_COOKIE);
 
   const response = NextResponse.json(
     { success: true, message: 'Demo session cleared.' },
@@ -212,7 +225,8 @@ export async function DELETE() {
   );
 
   response.cookies.delete(DEMO_SESSION_COOKIE);
-  response.cookies.delete('demo_session_created_at');
+  response.cookies.delete(DEMO_SESSION_CREATED_AT_COOKIE);
+  response.cookies.delete(DEMO_SESSION_SIGNATURE_COOKIE);
 
   return response;
 }

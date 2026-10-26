@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       userId: authUser.userId,
     });
 
-    await applyRateLimit(authUser.userId, '/api/interview/evaluate');
+    await applyRateLimit(authUser.userId, '/api/interview/evaluate', 'eval');
 
     const result = await evaluationService.evaluateInterview(body, {
       id: authUser.userId,

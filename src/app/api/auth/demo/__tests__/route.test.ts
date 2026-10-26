@@ -153,7 +153,6 @@ describe('/api/auth/demo Route Handler', () => {
       expect(body.success).toBe(true);
       expect(body.message).toContain('initialized successfully');
 
-      // Verify cookie store interactions
       expect(mockCookieStore.set).toHaveBeenCalledWith(
         DEMO_SESSION_COOKIE,
         'true',
@@ -174,11 +173,22 @@ describe('/api/auth/demo Route Handler', () => {
           maxAge: 86400,
         }),
       );
+      expect(mockCookieStore.set).toHaveBeenCalledWith(
+        'demo_session_signature',
+        expect.any(String),
+        expect.objectContaining({
+          path: '/',
+          httpOnly: true,
+          sameSite: 'lax',
+          maxAge: 86400,
+        }),
+      );
 
       // Verify cookies set directly on the response headers
       const setCookieHeader = res.headers.get('set-cookie');
       expect(setCookieHeader).toContain(DEMO_SESSION_COOKIE);
       expect(setCookieHeader).toContain('demo_session_created_at');
+      expect(setCookieHeader).toContain('demo_session_signature');
     });
 
     it('returns 403 CSRF_REJECTED when request is from an unauthorized origin', async () => {
@@ -223,6 +233,9 @@ describe('/api/auth/demo Route Handler', () => {
       expect(mockCookieStore.delete).toHaveBeenCalledWith(DEMO_SESSION_COOKIE);
       expect(mockCookieStore.delete).toHaveBeenCalledWith(
         'demo_session_created_at',
+      );
+      expect(mockCookieStore.delete).toHaveBeenCalledWith(
+        'demo_session_signature',
       );
     });
   });

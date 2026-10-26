@@ -20,6 +20,13 @@ export const DEMO_USER_ID = '00000000-0000-0000-0000-000000000000' as const;
 export const DEMO_SESSION_COOKIE = 'demo_candidate_session' as const;
 
 /**
+ * Cookie names for demo candidate cryptographic verification
+ */
+export const DEMO_SESSION_SIGNATURE_COOKIE = 'demo_session_signature' as const;
+export const DEMO_SESSION_CREATED_AT_COOKIE =
+  'demo_session_created_at' as const;
+
+/**
  * Demo user email used for DB upserts when saving evaluation results
  */
 export const DEMO_USER_EMAIL =

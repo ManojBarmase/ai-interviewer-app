@@ -15,7 +15,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     const authUser = await getAuthenticatedUser(req);
 
-    await applyRateLimit(authUser.userId, '/api/interview/chat');
+    await applyRateLimit(authUser.userId, '/api/interview/chat', 'chat');
 
     return await chatService.handleChatStream(
       await req.json(),

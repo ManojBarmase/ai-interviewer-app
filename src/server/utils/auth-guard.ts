@@ -5,9 +5,12 @@ import type { NextRequest } from 'next/server';
 
 import { createServerClient } from '@supabase/ssr';
 
+import { verifyDemoSession } from '@/lib/auth/demo-session';
 import { env } from '@/lib/config/env';
 import {
   DEMO_SESSION_COOKIE,
+  DEMO_SESSION_CREATED_AT_COOKIE,
+  DEMO_SESSION_SIGNATURE_COOKIE,
   DEMO_USER_EMAIL,
   DEMO_USER_ID,
 } from '@/lib/constants';
@@ -34,11 +37,23 @@ export async function getAuthenticatedUser(
   const url = env.NEXT_PUBLIC_SUPABASE_URL;
   const key = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  let isDemo = req.cookies.get(DEMO_SESSION_COOKIE)?.value === 'true';
+  const demoCookie = req.cookies.get(DEMO_SESSION_COOKIE)?.value;
+  const demoCreatedAt = req.cookies.get(DEMO_SESSION_CREATED_AT_COOKIE)?.value;
+  const demoSignature = req.cookies.get(DEMO_SESSION_SIGNATURE_COOKIE)?.value;
+
+  let isDemo =
+    demoCookie === 'true' || verifyDemoSession(demoCreatedAt, demoSignature);
+
   if (!isDemo) {
     try {
       const cookieStore = await cookies();
-      isDemo = cookieStore.get(DEMO_SESSION_COOKIE)?.value === 'true';
+      const storeCookie = cookieStore.get(DEMO_SESSION_COOKIE)?.value;
+      const storeCreatedAt = cookieStore.get(
+        DEMO_SESSION_CREATED_AT_COOKIE,
+      )?.value;
+      const storeSig = cookieStore.get(DEMO_SESSION_SIGNATURE_COOKIE)?.value;
+      isDemo =
+        storeCookie === 'true' || verifyDemoSession(storeCreatedAt, storeSig);
     } catch {
       // In isolated test runner or contexts without AsyncLocalStorage, ignore
     }

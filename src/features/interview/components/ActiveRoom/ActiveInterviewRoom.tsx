@@ -61,6 +61,7 @@ export function ActiveInterviewRoom() {
   } = useInterviewStore();
 
   const [aiStreamingText, setAiStreamingText] = useState('');
+  const [sttNotice, setSttNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'chat' | 'workspace' | 'live'>(
     'chat',
   );
@@ -606,42 +607,64 @@ export function ActiveInterviewRoom() {
         return;
       }
 
-      const stopRec = startRecording(
-        {
-          onInterimTranscript: (interimText: string) => {
-            if (!isCancelled && !isSubmittingRef.current) {
-              setLiveTranscript(interimText);
-              baseTranscriptRef.current = interimText;
-            }
+      let stopRec: () => void = () => {};
+      try {
+        stopRec = startRecording(
+          {
+            onInterimTranscript: (interimText: string) => {
+              if (!isCancelled && !isSubmittingRef.current) {
+                setSttNotice(null);
+                setLiveTranscript(interimText);
+                baseTranscriptRef.current = interimText;
+              }
+            },
+            onFinalTranscript: (finalText: string, confidence: number) => {
+              if (!isCancelled && !isSubmittingRef.current) {
+                setSttNotice(null);
+                setLiveTranscript(finalText);
+                baseTranscriptRef.current = finalText;
+                commitTranscript(finalText, confidence);
+              }
+            },
+            onError: (err: { code?: string; message?: string }) => {
+              if (
+                !isCancelled &&
+                err.code !== 'RECOGNITION_ABORTED' &&
+                err.code !== 'NO_SPEECH_DETECTED'
+              ) {
+                // Graceful degradation: do NOT crash the interview or enter ERROR phase!
+                // Allow candidate to continue typing their response or retry the microphone.
+                console.warn(
+                  '[ActiveInterviewRoom] Speech recognition network/audio degradation:',
+                  err,
+                );
+                setSttNotice(
+                  err.message ||
+                    'A network error interrupted speech recognition. Check your connection.',
+                );
+              }
+            },
+            onEnd: () => {
+              // Enterprise Rule: STT onEnd MUST NEVER auto-submit or skip question.
+              // Turn progression is strictly driven by candidate manual submission.
+            },
           },
-          onFinalTranscript: (finalText: string, confidence: number) => {
-            if (!isCancelled && !isSubmittingRef.current) {
-              setLiveTranscript(finalText);
-              baseTranscriptRef.current = finalText;
-              commitTranscript(finalText, confidence);
-            }
-          },
-          onError: (err: { code?: string; message?: string }) => {
-            if (
-              !isCancelled &&
-              err.code !== 'RECOGNITION_ABORTED' &&
-              err.code !== 'NO_SPEECH_DETECTED'
-            ) {
-              setError({
-                code: 'STT_FAILED',
-                message:
-                  err.message || 'Speech recognition encountered an issue.',
-                retryable: true,
-              });
-            }
-          },
-          onEnd: () => {
-            // Enterprise Rule: STT onEnd MUST NEVER auto-submit or skip question.
-            // Turn progression is strictly driven by candidate manual submission.
-          },
-        },
-        { language: 'en-US', continuous: true },
-      );
+          { language: 'en-US', continuous: true },
+        );
+      } catch (err: unknown) {
+        console.warn(
+          '[ActiveInterviewRoom] Failed to initialize speech recognition:',
+          err,
+        );
+        setTimeout(() => {
+          if (!isCancelled) {
+            setSttNotice(
+              'Speech recognition is not accessible in this environment. You can type your responses in the box below.',
+            );
+          }
+        }, 0);
+      }
+
       return () => {
         stopRec();
       };
@@ -813,6 +836,70 @@ export function ActiveInterviewRoom() {
                     Microphone is muted — speech is not being recorded. Click
                     unmute below or type your answer directly.
                   </span>
+                </div>
+              )}
+
+              {/* Speech Recognition Network/Degradation Fallback Notice */}
+              {isListening && !isMicMuted && sttNotice && (
+                <div className="flex items-center justify-between gap-3 mb-3 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs animate-fadeIn">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                    <span>
+                      {sttNotice}{' '}
+                      <span className="text-white/80 font-medium">
+                        You can continue typing your answer directly below.
+                      </span>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSttNotice(null);
+                      stopRecording();
+                      setTimeout(() => {
+                        if (!isMicMutedRef.current) {
+                          try {
+                            startRecording(
+                              {
+                                onInterimTranscript: (text: string) => {
+                                  setSttNotice(null);
+                                  setLiveTranscript(text);
+                                  baseTranscriptRef.current = text;
+                                },
+                                onFinalTranscript: (
+                                  text: string,
+                                  conf: number,
+                                ) => {
+                                  setSttNotice(null);
+                                  setLiveTranscript(text);
+                                  baseTranscriptRef.current = text;
+                                  commitTranscript(text, conf);
+                                },
+                                onError: (err) => {
+                                  if (
+                                    err.code !== 'RECOGNITION_ABORTED' &&
+                                    err.code !== 'NO_SPEECH_DETECTED'
+                                  ) {
+                                    setSttNotice(
+                                      err.message ||
+                                        'A network error interrupted speech recognition. Check your connection.',
+                                    );
+                                  }
+                                },
+                                onEnd: () => {},
+                              },
+                              { language: 'en-US', continuous: true },
+                            );
+                          } catch {
+                            // Ignored
+                          }
+                        }
+                      }, 50);
+                    }}
+                    className="text-[11px] underline font-semibold hover:text-white shrink-0 ml-2 cursor-pointer"
+                  >
+                    Retry Mic
+                  </button>
                 </div>
               )}
 

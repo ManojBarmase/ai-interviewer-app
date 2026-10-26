@@ -308,6 +308,8 @@ export function startRecording(
   _activeCallbacks = callbacks;
   _activeOptions = options;
 
+  let _networkRetryCount = 0;
+
   function createAndStartRecognition(): SpeechRecognitionAmbient {
     const rec = new RecognitionClass();
     if (_activeOptions?.language !== undefined) {
@@ -345,6 +347,7 @@ export function startRecording(
 
     // -- Event: results -------------------------------------------------------
     rec.onresult = (event: SpeechRecognitionEventAmbient) => {
+      _networkRetryCount = 0;
       resetSilenceTimer();
 
       let currentSegmentFinal = '';
@@ -417,6 +420,10 @@ export function startRecording(
       const code: AudioErrorCode =
         codeMap[event.error] ?? 'RECOGNITION_UNKNOWN';
 
+      if (code === 'RECOGNITION_NETWORK_ERROR') {
+        _networkRetryCount++;
+      }
+
       const isFatal =
         code === 'NOT_ALLOWED' ||
         code === 'AUDIO_CAPTURE_FAILED' ||
@@ -475,9 +482,14 @@ export function startRecording(
         return;
       }
 
-      // In continuous mode: browser stopped on 1-2s pause or speech end.
+      // In continuous mode or recovering from transient error:
       // Auto-restart recognition seamlessly to keep listening without data loss.
       if (_restartTimer !== null) clearTimeout(_restartTimer);
+      const delay =
+        _networkRetryCount > 0
+          ? Math.min(2000, 300 * Math.pow(2, _networkRetryCount))
+          : 50;
+
       _restartTimer = setTimeout(() => {
         _restartTimer = null;
         if (!_isExplicitlyStopped && _isSessionActive) {
@@ -493,7 +505,7 @@ export function startRecording(
             notifySessionEnd();
           }
         }
-      }, 50);
+      }, delay);
     };
 
     // -- Start — catch synchronous DOMException ------------------------------
