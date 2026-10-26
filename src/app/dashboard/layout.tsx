@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { createServerClient } from '@supabase/ssr';
 
 import { DashboardSidebar } from '@/components/layouts/DashboardSidebar/DashboardSidebar';
+import { DEMO_SESSION_COOKIE } from '@/lib/constants';
 
 export default async function DashboardLayout({
   children,
@@ -27,8 +28,7 @@ export default async function DashboardLayout({
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isDemoSession =
-    cookieStore.get('demo_candidate_session')?.value === 'true';
+  const isDemoSession = cookieStore.get(DEMO_SESSION_COOKIE)?.value === 'true';
 
   // Enterprise Standard: Defense-in-Depth verification at layout level
   if (!user && !isDemoSession) {

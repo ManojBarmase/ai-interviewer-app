@@ -1,33 +1,30 @@
-import { cookies } from 'next/headers';
+import { type NextRequest } from 'next/server';
 
-import { createRouteHandlerClient } from '@/lib/supabase/server';
-import { UnauthorizedError } from '@/server/errors/AppError';
+import { NotFoundError } from '@/server/errors/AppError';
+import { sessionRepository } from '@/server/repositories/session.repository';
 import { sessionService } from '@/server/services/session.service';
 import { handleApiError, ok } from '@/server/utils/api-response';
+import {
+  getAuthenticatedUser,
+  requireOwnership,
+} from '@/server/utils/auth-guard';
 
 export async function DELETE(
-  _req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params;
-    const cookieStore = await cookies();
-    const { supabase } = await createRouteHandlerClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const authUser = await getAuthenticatedUser(req);
 
-    const hasDemo = cookieStore.get('demo_candidate_session')?.value === 'true';
-    const userId =
-      user?.id ?? (hasDemo ? '00000000-0000-0000-0000-000000000000' : null);
-
-    if (!userId) {
-      throw new UnauthorizedError(
-        'Unauthorized. Please sign in to perform this action.',
-      );
+    const session = await sessionRepository.findById(id);
+    if (!session) {
+      throw new NotFoundError('Session not found or already deleted.');
     }
 
-    await sessionService.deleteSession(id, userId);
+    requireOwnership(session.userId, authUser.userId, authUser.role);
+
+    await sessionService.deleteSession(id, session.userId);
     return ok({ success: true });
   } catch (error) {
     return handleApiError(error, { route: '/api/interview/session/[id]' });

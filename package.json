@@ -19,8 +19,6 @@
     "validate": "npm run type-check && npm run lint && npm run test && npm run format:check"
   },
   "dependencies": {
-    "@google/genai": "^2.26.0",
-    "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^6.19.3",
     "@sentry/nextjs": "^11.9.0",
     "@supabase/ssr": "^0.12.7",

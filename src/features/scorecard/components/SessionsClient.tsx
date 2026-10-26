@@ -53,6 +53,8 @@ export function SessionsClient({
   const [sortBy, setSortBy] = useState<'recent' | 'score' | 'length'>('recent');
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set());
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const sessions = initialSessions.filter((s) => !deletedIds.has(s.id));
 
@@ -89,32 +91,45 @@ export function SessionsClient({
   const handleDeleteClick = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     e.preventDefault();
+    setDeleteError(null);
     setSessionToDelete(id);
   };
 
   const handleConfirmDelete = async () => {
-    if (!sessionToDelete) return;
+    if (!sessionToDelete || isDeleting) return;
     const id = sessionToDelete;
-    setSessionToDelete(null);
-
-    // Optimistic UI update
-    setDeletedIds((prev) => new Set(prev).add(id));
+    setIsDeleting(true);
+    setDeleteError(null);
 
     try {
       const res = await fetch(`/api/interview/session/${id}`, {
         method: 'DELETE',
       });
-      if (!res.ok) {
-        throw new Error('Failed to delete');
+
+      if (res.status === 401) {
+        // Session expired or unauthenticated — smoothly redirect to login
+        router.push('/login?redirectTo=/dashboard/sessions');
+        return;
       }
-    } catch (err) {
-      console.error('Failed to delete session', err);
-      // Revert if API call fails
-      setDeletedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        const message =
+          errorData?.error || 'Failed to delete session. Please try again.';
+        setDeleteError(message);
+        return;
+      }
+
+      // Success
+      setDeletedIds((prev) => new Set(prev).add(id));
+      setSessionToDelete(null);
+      router.refresh();
+    } catch {
+      setDeleteError(
+        'Network error while deleting session. Please check your connection.',
+      );
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -321,7 +336,12 @@ export function SessionsClient({
       {/* Accessible Confirmation Modal */}
       <Modal
         isOpen={Boolean(sessionToDelete)}
-        onClose={() => setSessionToDelete(null)}
+        onClose={() => {
+          if (!isDeleting) {
+            setSessionToDelete(null);
+            setDeleteError(null);
+          }
+        }}
         variant="danger"
         size="sm"
       >
@@ -330,6 +350,12 @@ export function SessionsClient({
           description="Are you sure you want to permanently delete this interview session? This action cannot be undone."
         />
         <ModalBody>
+          {deleteError ? (
+            <div className="flex items-center gap-3 text-red-400 bg-red-500/10 p-3 rounded-xl border border-red-500/20 text-xs mb-3">
+              <AlertTriangle size={16} className="shrink-0" />
+              <span>{deleteError}</span>
+            </div>
+          ) : null}
           <div className="flex items-center gap-3 text-amber-400 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20 text-xs">
             <AlertTriangle size={16} className="shrink-0" />
             <span>
@@ -342,17 +368,23 @@ export function SessionsClient({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setSessionToDelete(null)}
+            disabled={isDeleting}
+            onClick={() => {
+              setSessionToDelete(null);
+              setDeleteError(null);
+            }}
           >
             Cancel
           </Button>
           <Button
             variant="danger"
             size="sm"
+            isLoading={isDeleting}
+            disabled={isDeleting}
             onClick={handleConfirmDelete}
-            leadingIcon={<Trash2 size={14} />}
+            leadingIcon={!isDeleting ? <Trash2 size={14} /> : undefined}
           >
-            Delete
+            {isDeleting ? 'Deleting...' : 'Delete'}
           </Button>
         </ModalFooter>
       </Modal>

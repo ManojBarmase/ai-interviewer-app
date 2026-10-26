@@ -268,9 +268,10 @@ export function ActiveInterviewRoom() {
               )
             : undefined;
 
-          const response = await fetch('/api/interview/evaluate', {
+          let response = await fetch('/api/interview/evaluate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({
               sessionId,
               transcript,
@@ -281,6 +282,34 @@ export function ActiveInterviewRoom() {
               durationSeconds,
             }),
           });
+
+          if (response.status === 401) {
+            try {
+              const reauth = await fetch('/api/auth/demo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+              });
+              if (reauth.ok) {
+                response = await fetch('/api/interview/evaluate', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'include',
+                  body: JSON.stringify({
+                    sessionId,
+                    transcript,
+                    turns: allTurns,
+                    candidateContext: state.candidateContext,
+                    startedAt: state.session?.startedAt,
+                    endedAt: new Date().toISOString(),
+                    durationSeconds,
+                  }),
+                });
+              }
+            } catch {
+              // Fall through to error handler
+            }
+          }
 
           if (!response.ok) {
             const errorData = await response.json().catch(() => null);
@@ -404,9 +433,10 @@ export function ActiveInterviewRoom() {
     setAiStreamingText('');
 
     try {
-      const response = await fetch('/api/interview/chat', {
+      let response = await fetch('/api/interview/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           sessionId,
           messages: historyMessages,
@@ -415,7 +445,43 @@ export function ActiveInterviewRoom() {
         signal: ac.signal,
       });
 
+      // Enterprise resilience: if unauthorized (e.g. demo cookie dropped or expired),
+      // attempt one silent recovery reauth against /api/auth/demo
+      if (response.status === 401) {
+        try {
+          const reauthRes = await fetch('/api/auth/demo', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+          });
+          if (reauthRes.ok) {
+            response = await fetch('/api/interview/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({
+                sessionId,
+                messages: historyMessages,
+                candidateContext,
+              }),
+              signal: ac.signal,
+            });
+          }
+        } catch {
+          // Re-auth failed; fallback to standard error handler
+        }
+      }
+
       if (!response.ok) {
+        if (response.status === 401) {
+          setError({
+            code: 'SESSION_EXPIRED',
+            message:
+              'Your authentication session expired. Please sign in or reactivate demo access to continue.',
+            retryable: true,
+          });
+          return;
+        }
         throw new Error(
           `Server returned ${response.status}: ${response.statusText}`,
         );

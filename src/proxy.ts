@@ -36,12 +36,9 @@ import type { NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 
 import { env } from '@/lib/config/env';
+import { DEMO_SESSION_COOKIE, DEMO_USER_ID } from '@/lib/constants';
 
-/**
- * Synthetic user ID assigned to reviewers and recruiters operating in demo mode.
- * Enables zero-setup instant walkthroughs without external email verification.
- */
-export const DEMO_USER_ID = '00000000-0000-0000-0000-000000000000';
+export { DEMO_USER_ID };
 
 /** 24-hour expiration duration in milliseconds for demo candidate sessions */
 const DEMO_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -131,21 +128,33 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const demoCookie = request.cookies.get('demo_candidate_session')?.value;
+  const demoCookie = request.cookies.get(DEMO_SESSION_COOKIE)?.value;
   const demoCreatedAt = request.cookies.get('demo_session_created_at')?.value;
 
   let isDemoSession = false;
   if (demoCookie === 'true') {
     const createdAtMs = demoCreatedAt ? parseInt(demoCreatedAt, 10) : NaN;
+    // Session is only expired if a valid timestamp exists and is older than max age
     const isExpired =
-      !createdAtMs || Date.now() - createdAtMs > DEMO_SESSION_MAX_AGE_MS;
+      Boolean(createdAtMs) &&
+      Date.now() - createdAtMs > DEMO_SESSION_MAX_AGE_MS;
 
     if (isExpired) {
       isDemoSession = false;
-      response.cookies.delete('demo_candidate_session');
+      response.cookies.delete(DEMO_SESSION_COOKIE);
       response.cookies.delete('demo_session_created_at');
     } else {
       isDemoSession = true;
+      // Self-heal: if timestamp cookie is missing, set it now with 24h lifetime
+      if (!createdAtMs) {
+        response.cookies.set('demo_session_created_at', Date.now().toString(), {
+          path: '/',
+          httpOnly: true,
+          secure: env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 60 * 60 * 24,
+        });
+      }
     }
   }
 
@@ -179,7 +188,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
         { status: 401 },
       );
       if (demoCookie === 'true' && !isDemoSession) {
-        apiResponse.cookies.delete('demo_candidate_session');
+        apiResponse.cookies.delete(DEMO_SESSION_COOKIE);
         apiResponse.cookies.delete('demo_session_created_at');
       }
       return apiResponse;
@@ -191,7 +200,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     loginUrl.searchParams.set('redirectTo', pathname);
     const redirectResponse = NextResponse.redirect(loginUrl);
     if (demoCookie === 'true' && !isDemoSession) {
-      redirectResponse.cookies.delete('demo_candidate_session');
+      redirectResponse.cookies.delete(DEMO_SESSION_COOKIE);
       redirectResponse.cookies.delete('demo_session_created_at');
     }
     return redirectResponse;
@@ -216,7 +225,9 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
  */
 export const config = {
   matcher: [
+    '/dashboard',
     '/dashboard/:path*',
+    '/interview',
     '/interview/:path*',
     '/api/interview/:path*',
     '/login',

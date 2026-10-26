@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { type NextRequest, NextResponse } from 'next/server';
 
 import { env } from '@/lib/config/env';
+import { DEMO_SESSION_COOKIE } from '@/lib/constants';
 
 /**
  * Enterprise Demo Session Handler
@@ -24,7 +25,15 @@ export async function POST(request: NextRequest) {
   const origin = request.headers.get('origin');
   if (origin) {
     const expectedOrigin = new URL(env.NEXT_PUBLIC_APP_URL).origin;
-    if (origin !== expectedOrigin && origin !== env.NEXT_PUBLIC_APP_URL) {
+    const isDevLocal =
+      env.NODE_ENV !== 'production' &&
+      (origin === 'http://localhost:3000' ||
+        origin === 'http://127.0.0.1:3000');
+    if (
+      !isDevLocal &&
+      origin !== expectedOrigin &&
+      origin !== env.NEXT_PUBLIC_APP_URL
+    ) {
       return NextResponse.json(
         { error: 'Origin mismatch rejected', code: 'CSRF_REJECTED' },
         { status: 403, headers: { Vary: 'Cookie' } },
@@ -36,7 +45,7 @@ export async function POST(request: NextRequest) {
   const createdAt = Date.now().toString();
 
   // 3. Set HttpOnly, secure session cookies with creation timestamp for server-side expiry
-  cookieStore.set('demo_candidate_session', 'true', {
+  cookieStore.set(DEMO_SESSION_COOKIE, 'true', {
     path: '/',
     httpOnly: true,
     secure: env.NODE_ENV === 'production',
@@ -67,7 +76,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE() {
   const cookieStore = await cookies();
-  cookieStore.delete('demo_candidate_session');
+  cookieStore.delete(DEMO_SESSION_COOKIE);
   cookieStore.delete('demo_session_created_at');
 
   return NextResponse.json(

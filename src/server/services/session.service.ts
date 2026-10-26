@@ -2,7 +2,10 @@ import 'server-only';
 
 import { createSessionLogger } from '@/lib/logger';
 import { BadRequestError, NotFoundError } from '@/server/errors/AppError';
-import { sessionRepository } from '@/server/repositories/session.repository';
+import {
+  sessionRepository,
+  type PaginationParams,
+} from '@/server/repositories/session.repository';
 
 export class SessionService {
   /**
@@ -43,11 +46,13 @@ export class SessionService {
   /**
    * Retrieves all non-deleted sessions for a given user.
    */
-  async getUserSessions(userId: string) {
+  async getUserSessions(userId: string, pagination?: PaginationParams) {
     if (!userId || !userId.trim()) {
       throw new BadRequestError('User ID is required.');
     }
-    return sessionRepository.findManyByUserId(userId);
+    return pagination !== undefined
+      ? sessionRepository.findManyByUserId(userId, pagination)
+      : sessionRepository.findManyByUserId(userId);
   }
 }
 

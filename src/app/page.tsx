@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation';
 
 import { createServerClient } from '@supabase/ssr';
 
+import { DEMO_SESSION_COOKIE } from '@/lib/constants';
+
 /**
  * Enterprise Entry Point (Root /)
  *
@@ -31,8 +33,7 @@ export default async function HomePage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isDemoSession =
-    cookieStore.get('demo_candidate_session')?.value === 'true';
+  const isDemoSession = cookieStore.get(DEMO_SESSION_COOKIE)?.value === 'true';
 
   if (user || isDemoSession) {
     redirect('/dashboard');

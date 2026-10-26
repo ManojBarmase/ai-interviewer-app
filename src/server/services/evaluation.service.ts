@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { DEMO_USER_EMAIL } from '@/lib/constants';
 import { createSessionLogger } from '@/lib/logger';
 import {
   evaluationSchema,
@@ -31,8 +32,8 @@ export interface EvaluationRequest {
 
 export interface EvaluationAuthUser {
   id: string;
-  email?: string | null;
-  firstName?: string | null;
+  email?: string | null | undefined;
+  firstName?: string | null | undefined;
 }
 
 export class EvaluationService {
@@ -329,7 +330,9 @@ export class EvaluationService {
   async evaluateInterview(
     data: EvaluationRequest,
     authUser: EvaluationAuthUser,
-  ): Promise<EvaluationType & { overallScore: number }> {
+  ): Promise<
+    EvaluationType & { overallScore: number; _persistenceWarning?: string }
+  > {
     const {
       sessionId,
       transcript,
@@ -417,7 +420,7 @@ export class EvaluationService {
 
         await this.repository.saveEvaluation({
           userId: authUser.id,
-          userEmail: authUser.email || 'demo-candidate@ai-interviewer.internal',
+          userEmail: authUser.email || DEMO_USER_EMAIL,
           userFirstName: authUser.firstName || 'Demo Candidate',
           sessionId,
           sessionTitle,
@@ -444,6 +447,12 @@ export class EvaluationService {
           },
           'Failed to save scorecard to database',
         );
+        // Return evaluation with a warning flag so the API route can communicate this to client
+        return {
+          ...scoredEvaluation,
+          _persistenceWarning:
+            'Evaluation computed but could not be saved. Please retry.',
+        };
       }
     }
 

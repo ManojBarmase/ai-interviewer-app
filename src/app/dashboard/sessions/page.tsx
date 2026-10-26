@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { createServerClient } from '@supabase/ssr';
 
 import { SessionsClient } from '@/features/scorecard';
+import { DEMO_SESSION_COOKIE, DEMO_USER_ID } from '@/lib/constants';
 import { prisma, type Prisma } from '@/server/db/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -43,14 +44,13 @@ export default async function SessionsPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const isDemoSession =
-    cookieStore.get('demo_candidate_session')?.value === 'true';
+  const isDemoSession = cookieStore.get(DEMO_SESSION_COOKIE)?.value === 'true';
 
   if (!user && !isDemoSession) {
     redirect('/login?redirectTo=/dashboard/sessions');
   }
 
-  const userId = user?.id || '00000000-0000-0000-0000-000000000000';
+  const userId = user?.id || DEMO_USER_ID;
 
   let sessions: SessionsPageSession[] = [];
   try {

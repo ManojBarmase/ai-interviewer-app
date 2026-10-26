@@ -5,6 +5,11 @@ import { createServerClient } from '@supabase/ssr';
 import { Flame, Target, Trophy, Zap } from 'lucide-react';
 
 import { DashboardClient } from '@/features/dashboard';
+import {
+  DEMO_SESSION_COOKIE,
+  DEMO_USER_EMAIL,
+  DEMO_USER_ID,
+} from '@/lib/constants';
 import { prisma, type Prisma } from '@/server/db/prisma';
 import {
   generateRealHeatmapData,
@@ -48,8 +53,7 @@ async function getAuthenticatedUser() {
     data: { user: authUser },
   } = await supabase.auth.getUser();
 
-  const isDemoSession =
-    cookieStore.get('demo_candidate_session')?.value === 'true';
+  const isDemoSession = cookieStore.get(DEMO_SESSION_COOKIE)?.value === 'true';
 
   if (!authUser && !isDemoSession) {
     redirect('/login?redirectTo=/dashboard');
@@ -81,9 +85,9 @@ async function getAuthenticatedUser() {
 
   // Synthetic demo session candidate
   return {
-    id: '00000000-0000-0000-0000-000000000000',
+    id: DEMO_USER_ID,
     name: 'Demo Candidate',
-    email: 'demo-candidate@ai-interviewer.internal',
+    email: DEMO_USER_EMAIL,
   };
 }
 

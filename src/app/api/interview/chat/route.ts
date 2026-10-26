@@ -1,49 +1,51 @@
 import type { NextRequest } from 'next/server';
 
-import { createServerClient } from '@supabase/ssr';
-
-import { env } from '@/lib/config/env';
-import { DEMO_USER_ID } from '@/proxy';
-import { rateLimit } from '@/server/integrations/cache/ratelimit';
+import {
+  AppError,
+  RateLimitError,
+  UnauthorizedError,
+} from '@/server/errors/AppError';
 import { chatService } from '@/server/services/chat.service';
+import { applyRateLimit } from '@/server/utils/apply-rate-limit';
+import { getAuthenticatedUser } from '@/server/utils/auth-guard';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest): Promise<Response> {
-  const url = env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const supabase =
-    url && key
-      ? createServerClient(url, key, {
-          cookies: { getAll: () => req.cookies.getAll() },
-        })
-      : null;
-  const user = supabase ? (await supabase.auth.getUser()).data.user : null;
-  const isDemo = req.cookies.get('demo_candidate_session')?.value === 'true';
-  const userId = user?.id ?? (isDemo ? DEMO_USER_ID : null);
-
-  if (!userId) {
-    return new Response(
-      JSON.stringify({ error: 'Unauthorized', code: 'UNAUTHORIZED' }),
-      { status: 401, headers: { 'Content-Type': 'application/json' } },
-    );
-  }
-
   try {
-    const { success } = await rateLimit.limit(userId);
-    if (!success) {
+    const authUser = await getAuthenticatedUser(req);
+
+    await applyRateLimit(authUser.userId, '/api/interview/chat');
+
+    return await chatService.handleChatStream(
+      await req.json(),
+      authUser.userId,
+    );
+  } catch (err) {
+    if (err instanceof UnauthorizedError) {
       return new Response(
-        JSON.stringify({ error: 'Rate limited', code: 'RATE_LIMITED' }),
+        JSON.stringify({ error: err.message, code: err.code }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (err instanceof RateLimitError) {
+      return new Response(
+        JSON.stringify({ error: err.message, code: err.code }),
         { status: 429, headers: { 'Content-Type': 'application/json' } },
       );
     }
-  } catch {
-    // Continue if redis is unavailable
-  }
 
-  try {
-    return await chatService.handleChatStream(await req.json(), userId);
-  } catch (err) {
+    if (err instanceof AppError) {
+      return new Response(
+        JSON.stringify({ error: err.message, code: err.code }),
+        {
+          status: err.statusCode,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    }
+
     const error = err instanceof Error ? err.message : 'Invalid request';
     return new Response(JSON.stringify({ error, code: 'BAD_REQUEST' }), {
       status: 400,

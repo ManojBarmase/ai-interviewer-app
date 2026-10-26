@@ -285,6 +285,9 @@ Candidate: We use Redis with TTL.
       );
 
       expect(result.technicalScore).toBe(7);
+      expect(result._persistenceWarning).toBe(
+        'Evaluation computed but could not be saved. Please retry.',
+      );
       expect(mockRepository.saveEvaluation).toHaveBeenCalled();
     });
   });

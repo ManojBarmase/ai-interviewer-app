@@ -7,6 +7,24 @@
 export const APP_NAME = 'AI Interviewer' as const;
 export const APP_VERSION = '0.1.0' as const;
 
+/**
+ * Hardcoded UUID for the anonymous demo candidate user.
+ * This user is never persisted in the real user table with real credentials.
+ * It uses the zero-UUID to be immediately identifiable in logs and DB queries.
+ */
+export const DEMO_USER_ID = '00000000-0000-0000-0000-000000000000' as const;
+
+/**
+ * Cookie name for demo candidate session
+ */
+export const DEMO_SESSION_COOKIE = 'demo_candidate_session' as const;
+
+/**
+ * Demo user email used for DB upserts when saving evaluation results
+ */
+export const DEMO_USER_EMAIL =
+  'demo-candidate@ai-interviewer.internal' as const;
+
 /** Route constants — strictly synchronized with Next.js App Router paths */
 export const ROUTES = {
   HOME: '/',

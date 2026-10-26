@@ -23,6 +23,7 @@ import {
   LogOut,
 } from 'lucide-react';
 
+import { DEMO_SESSION_COOKIE } from '@/lib/constants';
 import { createClient } from '@/lib/supabase/client';
 
 interface NavItem {
@@ -75,7 +76,7 @@ export function DashboardSidebar() {
           setUserProfile({ name: displayName, plan: 'Pro Tier' });
         } else if (
           typeof document !== 'undefined' &&
-          document.cookie.includes('demo_candidate_session=true')
+          document.cookie.includes(`${DEMO_SESSION_COOKIE}=true`)
         ) {
           setUserProfile({ name: 'Demo Candidate', plan: 'Demo Sandbox' });
         }
