@@ -21,6 +21,8 @@
     "health-check": "curl -s http://localhost:3000/api/health | jq .",
     "audit": "npm audit --audit-level=high",
     "db:migrate": "prisma migrate deploy",
+    "db:seed": "prisma db seed",
+    "db:purge-expired": "tsx scripts/purge-expired-data.ts",
     "db:studio": "prisma studio",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json,md}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css,json,md}\"",
@@ -71,11 +73,15 @@
     "prettier": "^3.9.9",
     "prisma": "^6.19.3",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vite": "^8.3.4",
     "vitest": "^5.0.5"
   },
   "overrides": {
     "deepmerge-ts": "^8.0.0"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   }
 }

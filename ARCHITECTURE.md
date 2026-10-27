@@ -225,3 +225,52 @@ Conversational interviews demand realistic human pacing. Standard cloud LLM endp
 - The model is instructed to output a structured JSON evaluation document.
 - The raw response passes through a sanitization step that removes any unexpected markdown code fences (` ```json `), followed by rigorous schema validation with Zod (`src/lib/validations/evaluation.ts`).
 - If parsing or validation fails, structured errors are returned without crashing the service, ensuring reliable persistence in `ScorecardRepository`.
+
+---
+
+## 7. Database Migration & Seeding Strategy
+
+To ensure zero downtime, deterministic deployments, and rapid local or staging onboarding, the application enforces a dual migration and seeding lifecycle managed by Prisma ORM and TypeScript.
+
+### 7.1. Database Migration Lifecycle
+
+The application distinguishes strictly between schema development and production releases:
+
+1. **Local Schema Development (`prisma migrate dev`)**:
+   - Used exclusively during local feature engineering.
+   - Generates sequential, version-controlled SQL migration scripts in `prisma/migrations/`.
+   - Automatically synchronizes Prisma Client types via `prisma generate`.
+
+2. **Automated CI/CD & Production Releases (`prisma migrate deploy` / `npm run db:migrate`)**:
+   - Executed during production build and continuous deployment pipelines (e.g., GitHub Actions, Vercel Build Step).
+   - Never regenerates migrations or prompt for interactive input.
+   - Applies pending migration files in transactional batches against the Supabase database.
+   - Strictly enforces backwards compatibility: breaking column renames or table drops must be phased over multiple releases (expand-contract pattern) to prevent disruptions to active serverless instances.
+
+3. **PgBouncer & Connection Pooling in Production**:
+   - Serverless invocations connect via the Supabase PgBouncer transaction pooler (port 6543) with `?pgbouncer=true&connection_limit=1`.
+   - Direct migrations and schema operations (`prisma migrate deploy`, `db push`) bypass PgBouncer and connect via direct session mode (port 5432) to support transactional DDL locks (`advisory_lock`).
+
+### 7.2. Reproducible Database Seeding (`prisma/seed.ts`)
+
+The database seeding pipeline (`npx prisma db seed` / `npm run db:seed`) provides a deterministic, automated way to populate environments with production-shaped test data for developer onboarding, end-to-end testing, and staging demonstrations.
+
+#### Architecture & Configuration
+- **Execution Engine**: Configured in `package.json` via `"prisma": { "seed": "tsx prisma/seed.ts" }`, executing modern TypeScript natively via `tsx` without precompilation overhead.
+- **Idempotency Guarantee**: Every record utilizes deterministic UUID primary keys or unique constraint lookups (`prisma.<model>.upsert`). Re-running the seed script is guaranteed to be non-destructive and side-effect free, safely updating existing entities rather than duplicating rows or violating unique constraints.
+- **Connection Safety**: Prisma client lifecycle is safely wrapped in `.then()` and `.catch()` blocks with guaranteed `prisma.$disconnect()` calls to eliminate hung database connections or PgBouncer pool starvation.
+
+#### Seeded Datasets
+The seed pipeline establishes complete, multi-tiered domain data:
+
+| Entity Type | Record Identifier / Title | Role / Type | Primary Signal / Characteristics |
+|---|---|---|---|
+| **User** | `demo@ai-interviewer.local` | `CANDIDATE` | Demo applicant for mock sessions and UI tests |
+| **User** | `interviewer@ai-interviewer.local` | `INTERVIEWER` | Senior Staff interviewer persona assigned to evaluations |
+| **User** | `admin@ai-interviewer.local` | `ADMIN` | Platform administrator with full audit permissions |
+| **Session & Scorecard** | Senior Frontend Architecture & React 19 Performance | `TECHNICAL` | Score: **8.9 / 10** (`STRONG_YES`) — Mastery over React 19 RSC, INP profiling, and streaming SSR |
+| **Session & Scorecard** | Real-Time Collaborative Document Canvas Engine | `SYSTEM_DESIGN` | Score: **7.5 / 10** (`YES`) — CRDT state synchronization, WebSocket clustering, Redis Pub/Sub |
+| **Session & Scorecard** | Leadership, Prioritization & Conflict Resolution | `BEHAVIOURAL` | Score: **6.4 / 10** (`NEUTRAL`) — Commercial compromise negotiation, STAR framework development |
+
+Each seeded session is populated with multi-turn `InterviewTranscript` chunks containing confidence scores, speaker diarization metadata, and full STAR dimension breakdowns (`dimensionBreakdown` JSON and numeric rating vectors).
+

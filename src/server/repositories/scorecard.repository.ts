@@ -6,6 +6,7 @@ import {
   InterviewType,
   HiringRecommendation,
 } from '@/server/db/prisma';
+import { encryptText, safeDecryptText } from '@/server/utils/crypto';
 
 export interface SaveEvaluationParams {
   userId: string;
@@ -92,10 +93,29 @@ export function normalizeInterviewType(rawType?: string | null): InterviewType {
 
 export class ScorecardRepository {
   /**
+   * Decrypts sensitive narrative feedback fields on a Scorecard record.
+   * If a field is already unencrypted plaintext (legacy records), it safely preserves the text.
+   */
+  decryptScorecard<
+    T extends {
+      strengths?: string | null;
+      weaknesses?: string | null;
+      detailedFeedback?: string | null;
+    },
+  >(scorecard: T): T {
+    return {
+      ...scorecard,
+      strengths: safeDecryptText(scorecard.strengths),
+      weaknesses: safeDecryptText(scorecard.weaknesses),
+      detailedFeedback: safeDecryptText(scorecard.detailedFeedback),
+    };
+  }
+
+  /**
    * Persists the evaluation results transactionally:
    * 1. Guarantees User record exists (satisfying foreign keys)
    * 2. Upserts the Session with COMPLETED status and metadata
-   * 3. Upserts the Scorecard with all 5 competency dimensions
+   * 3. Upserts the Scorecard with all 5 competency dimensions and AES-256-GCM encrypted PII fields
    */
   async saveEvaluation(params: SaveEvaluationParams): Promise<void> {
     const {
@@ -125,6 +145,11 @@ export class ScorecardRepository {
       : Prisma.JsonNull;
     const formattedStrengths = strengths.join('\n- ');
     const formattedWeaknesses = weaknesses.join('\n- ');
+
+    // Encrypt sensitive PII narrative fields at rest using AES-256-GCM
+    const encryptedStrengths = encryptText(formattedStrengths);
+    const encryptedWeaknesses = encryptText(formattedWeaknesses);
+    const encryptedDetailedFeedback = encryptText(actionableFeedback);
 
     await prisma.$transaction(async (tx) => {
       // 1. Ensure User exists
@@ -163,7 +188,7 @@ export class ScorecardRepository {
 
       const normalizedRecommendation = normalizeRecommendation(recommendation);
 
-      // 3. Upsert Scorecard record
+      // 3. Upsert Scorecard record with encrypted PII narrative feedback
       await tx.scorecard.upsert({
         where: { sessionId },
         update: {
@@ -172,9 +197,9 @@ export class ScorecardRepository {
           problemSolvingScore,
           cultureFitScore,
           overallScore,
-          strengths: formattedStrengths,
-          weaknesses: formattedWeaknesses,
-          detailedFeedback: actionableFeedback,
+          strengths: encryptedStrengths,
+          weaknesses: encryptedWeaknesses,
+          detailedFeedback: encryptedDetailedFeedback,
           recommendation: normalizedRecommendation,
           dimensionBreakdown,
         },
@@ -186,9 +211,9 @@ export class ScorecardRepository {
           problemSolvingScore,
           cultureFitScore,
           overallScore,
-          strengths: formattedStrengths,
-          weaknesses: formattedWeaknesses,
-          detailedFeedback: actionableFeedback,
+          strengths: encryptedStrengths,
+          weaknesses: encryptedWeaknesses,
+          detailedFeedback: encryptedDetailedFeedback,
           recommendation: normalizedRecommendation,
           dimensionBreakdown,
         },
@@ -197,10 +222,19 @@ export class ScorecardRepository {
   }
 
   async findBySessionId(sessionId: string) {
-    return prisma.scorecard.findUnique({
+    const scorecard = await prisma.scorecard.findUnique({
       where: { sessionId },
       include: { session: true },
     });
+    return scorecard ? this.decryptScorecard(scorecard) : null;
+  }
+
+  async findById(id: string) {
+    const scorecard = await prisma.scorecard.findUnique({
+      where: { id },
+      include: { session: true },
+    });
+    return scorecard ? this.decryptScorecard(scorecard) : null;
   }
 }
 

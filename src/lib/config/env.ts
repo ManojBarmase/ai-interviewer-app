@@ -252,6 +252,13 @@ export const env = {
   DEMO_MODE_ENABLED: optionalEnv('DEMO_MODE_ENABLED', 'true'),
 
   /**
+   * Optional AES-256-GCM encryption key for field-level PII encryption.
+   * If unset, uses safe fallback in development/test.
+   * @default ''
+   */
+  DATABASE_ENCRYPTION_KEY: optionalEnv('DATABASE_ENCRYPTION_KEY', ''),
+
+  /**
    * Node execution environment ('development' | 'production' | 'test').
    * @default 'development'
    */
