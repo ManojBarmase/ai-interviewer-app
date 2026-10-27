@@ -1,55 +1,29 @@
 import type { NextRequest } from 'next/server';
 
-import {
-  AppError,
-  RateLimitError,
-  UnauthorizedError,
-} from '@/server/errors/AppError';
+import { createSessionLogger } from '@/lib/logger';
 import { chatService } from '@/server/services/chat.service';
+import { handleApiError } from '@/server/utils/api-response';
 import { applyRateLimit } from '@/server/utils/apply-rate-limit';
 import { getAuthenticatedUser } from '@/server/utils/auth-guard';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest): Promise<Response> {
+  let log = createSessionLogger('chat', { route: '/api/interview/chat' });
+
   try {
     const authUser = await getAuthenticatedUser(req);
+    const body = await req.json().catch(() => null);
+
+    log = createSessionLogger(body?.sessionId, {
+      route: '/api/interview/chat',
+      userId: authUser.userId,
+    });
 
     await applyRateLimit(authUser.userId, '/api/interview/chat', 'chat');
 
-    return await chatService.handleChatStream(
-      await req.json(),
-      authUser.userId,
-    );
+    return await chatService.handleChatStream(body, authUser.userId);
   } catch (err) {
-    if (err instanceof UnauthorizedError) {
-      return new Response(
-        JSON.stringify({ error: err.message, code: err.code }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } },
-      );
-    }
-
-    if (err instanceof RateLimitError) {
-      return new Response(
-        JSON.stringify({ error: err.message, code: err.code }),
-        { status: 429, headers: { 'Content-Type': 'application/json' } },
-      );
-    }
-
-    if (err instanceof AppError) {
-      return new Response(
-        JSON.stringify({ error: err.message, code: err.code }),
-        {
-          status: err.statusCode,
-          headers: { 'Content-Type': 'application/json' },
-        },
-      );
-    }
-
-    const error = err instanceof Error ? err.message : 'Invalid request';
-    return new Response(JSON.stringify({ error, code: 'BAD_REQUEST' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return handleApiError(err, log);
   }
 }

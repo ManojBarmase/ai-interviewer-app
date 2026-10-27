@@ -1,8 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import {
-  BadRequestError,
+  chatMessageSchema,
+  candidateContextSchema,
+  chatRequestSchema,
+  type ChatRequest,
+} from '@/lib/validations/chat';
+import {
   ExternalServiceError,
+  ValidationError,
 } from '@/server/errors/AppError';
 import {
   ChatService,
@@ -10,7 +16,6 @@ import {
   validateChatRequest,
   sseFrame,
   sseHeaders,
-  type ChatRequest,
 } from '@/server/services/chat.service';
 
 vi.mock('@/lib/config/env', () => ({
@@ -39,6 +44,100 @@ vi.mock('groq-sdk', () => {
   };
 });
 
+describe('Chat Validation Schemas', () => {
+  describe('chatMessageSchema', () => {
+    it('validates user and model roles successfully', () => {
+      expect(
+        chatMessageSchema.safeParse({ role: 'user', content: 'Hello' }).success,
+      ).toBe(true);
+      expect(
+        chatMessageSchema.safeParse({ role: 'model', content: 'Hi there' })
+          .success,
+      ).toBe(true);
+    });
+
+    it('rejects unsupported roles', () => {
+      expect(
+        chatMessageSchema.safeParse({ role: 'system', content: 'System note' })
+          .success,
+      ).toBe(false);
+      expect(
+        chatMessageSchema.safeParse({
+          role: 'assistant',
+          content: 'Assistant note',
+        }).success,
+      ).toBe(false);
+    });
+
+    it('rejects empty content or content exceeding 8000 chars', () => {
+      expect(
+        chatMessageSchema.safeParse({ role: 'user', content: '' }).success,
+      ).toBe(false);
+      expect(
+        chatMessageSchema.safeParse({
+          role: 'user',
+          content: 'x'.repeat(8001),
+        }).success,
+      ).toBe(false);
+    });
+  });
+
+  describe('candidateContextSchema', () => {
+    it('accepts valid context with all optional fields', () => {
+      const parsed = candidateContextSchema.safeParse({
+        role: 'Full Stack Engineer',
+        experience: 'Senior',
+        difficulty: 'Hard',
+        interviewType: 'TECHNICAL',
+        techStack: ['TypeScript', 'React'],
+        jobDescription: 'Seeking expert developer',
+        resumeText: 'Experienced with Next.js',
+        interviewerId: 'alex',
+        numQuestions: 5,
+        timeLimit: '30m',
+        allowFollowUps: true,
+      });
+
+      expect(parsed.success).toBe(true);
+    });
+
+    it('allows empty object as candidateContext', () => {
+      expect(candidateContextSchema.safeParse({}).success).toBe(true);
+    });
+  });
+
+  describe('chatRequestSchema', () => {
+    it('parses valid payload successfully', () => {
+      const res = chatRequestSchema.safeParse({
+        sessionId: 'sess-abc-123',
+        messages: [{ role: 'user', content: 'Hello' }],
+        interviewType: 'TECHNICAL',
+      });
+      expect(res.success).toBe(true);
+    });
+
+    it('rejects when messages is empty', () => {
+      const res = chatRequestSchema.safeParse({
+        sessionId: 'sess-abc-123',
+        messages: [],
+      });
+      expect(res.success).toBe(false);
+    });
+
+    it('rejects when messages exceed 50 items', () => {
+      const messages = Array.from({ length: 51 }, () => ({
+        role: 'user' as const,
+        content: 'ping',
+      }));
+      const res = chatRequestSchema.safeParse({
+        sessionId: 'sess-abc-123',
+        messages,
+      });
+      expect(res.success).toBe(false);
+    });
+  });
+});
+
 describe('ChatService & SSE Utilities', () => {
   const originalGroqKey = process.env.GROQ_API_KEY;
 
@@ -60,25 +159,25 @@ describe('ChatService & SSE Utilities', () => {
       ],
     };
 
-    it('throws BadRequestError when body is not an object', () => {
-      expect(() => validateChatRequest(null)).toThrow(BadRequestError);
-      expect(() => validateChatRequest(undefined)).toThrow(BadRequestError);
+    it('throws ValidationError when body is not an object', () => {
+      expect(() => validateChatRequest(null)).toThrow(ValidationError);
+      expect(() => validateChatRequest(undefined)).toThrow(ValidationError);
       expect(() => validateChatRequest('not-an-object')).toThrow(
-        BadRequestError,
+        ValidationError,
       );
-      expect(() => validateChatRequest(12345)).toThrow(BadRequestError);
+      expect(() => validateChatRequest(12345)).toThrow(ValidationError);
     });
 
-    it('throws BadRequestError when messages array is empty', () => {
+    it('throws ValidationError when messages array is empty', () => {
       expect(() =>
         validateChatRequest({
           sessionId: 'sess-123',
           messages: [],
         }),
-      ).toThrow(BadRequestError);
+      ).toThrow(ValidationError);
     });
 
-    it('throws BadRequestError when messages exceed 50 turns', () => {
+    it('throws ValidationError when messages exceed 50 turns', () => {
       const messages = Array.from({ length: 51 }, (_, i) => ({
         role: (i % 2 === 0 ? 'user' : 'model') as 'user' | 'model',
         content: `Message turn ${i}`,
@@ -89,10 +188,10 @@ describe('ChatService & SSE Utilities', () => {
           sessionId: 'sess-123',
           messages,
         }),
-      ).toThrow(BadRequestError);
+      ).toThrow(ValidationError);
     });
 
-    it('throws BadRequestError when a message has invalid role (not "user" or "model")', () => {
+    it('throws ValidationError when a message has invalid role (not "user" or "model")', () => {
       expect(() =>
         validateChatRequest({
           sessionId: 'sess-123',
@@ -103,7 +202,7 @@ describe('ChatService & SSE Utilities', () => {
             },
           ],
         }),
-      ).toThrow(BadRequestError);
+      ).toThrow(ValidationError);
 
       expect(() =>
         validateChatRequest({
@@ -115,10 +214,10 @@ describe('ChatService & SSE Utilities', () => {
             },
           ],
         }),
-      ).toThrow(BadRequestError);
+      ).toThrow(ValidationError);
     });
 
-    it('throws BadRequestError when a message content is empty string', () => {
+    it('throws ValidationError when a message content is empty string', () => {
       expect(() =>
         validateChatRequest({
           sessionId: 'sess-123',
@@ -129,10 +228,10 @@ describe('ChatService & SSE Utilities', () => {
             },
           ],
         }),
-      ).toThrow(BadRequestError);
+      ).toThrow(ValidationError);
     });
 
-    it('throws BadRequestError when a message content exceeds 8000 characters', () => {
+    it('throws ValidationError when a message content exceeds 8000 characters', () => {
       expect(() =>
         validateChatRequest({
           sessionId: 'sess-123',
@@ -143,29 +242,29 @@ describe('ChatService & SSE Utilities', () => {
             },
           ],
         }),
-      ).toThrow(BadRequestError);
+      ).toThrow(ValidationError);
     });
 
-    it('throws BadRequestError when sessionId is missing or empty', () => {
+    it('throws ValidationError when sessionId is missing or empty', () => {
       expect(() =>
         validateChatRequest({
           messages: [{ role: 'user', content: 'Hello' }],
         }),
-      ).toThrow(BadRequestError);
+      ).toThrow(ValidationError);
 
       expect(() =>
         validateChatRequest({
           sessionId: '',
           messages: [{ role: 'user', content: 'Hello' }],
         }),
-      ).toThrow(BadRequestError);
+      ).toThrow(ValidationError);
 
       expect(() =>
         validateChatRequest({
           sessionId: '   ',
           messages: [{ role: 'user', content: 'Hello' }],
         }),
-      ).toThrow(BadRequestError);
+      ).toThrow(ValidationError);
     });
 
     it('returns valid ChatRequest when all fields are correct', () => {
@@ -195,6 +294,23 @@ describe('ChatService & SSE Utilities', () => {
         candidateContext,
       });
       expect(result.candidateContext).toEqual(candidateContext);
+    });
+
+    it('populates ValidationError metadata with 422 status, code, and issues', () => {
+      try {
+        validateChatRequest({
+          sessionId: '',
+          messages: [],
+        });
+        expect.unreachable('Should have thrown ValidationError');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ValidationError);
+        const valErr = err as ValidationError;
+        expect(valErr.statusCode).toBe(422);
+        expect(valErr.code).toBe('VALIDATION_ERROR');
+        expect(Array.isArray(valErr.details)).toBe(true);
+        expect((valErr.details as unknown[]).length).toBeGreaterThan(0);
+      }
     });
   });
 

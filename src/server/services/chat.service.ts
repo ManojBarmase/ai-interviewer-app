@@ -1,12 +1,19 @@
 import 'server-only';
 
 import Groq from 'groq-sdk';
+import { z } from 'zod';
 
 import { env } from '@/lib/config/env';
 import { createSessionLogger } from '@/lib/logger';
 import {
-  BadRequestError,
+  chatRequestSchema,
+  type CandidateContext,
+  type ChatMessage,
+  type ChatRequest,
+} from '@/lib/validations/chat';
+import {
   ExternalServiceError,
+  ValidationError,
 } from '@/server/errors/AppError';
 import {
   MAX_RESUME_LENGTH,
@@ -15,32 +22,7 @@ import {
   sanitizePromptInput,
 } from '@/server/utils/sanitize-prompt-input';
 
-export interface ChatMessage {
-  role: 'user' | 'model';
-  content: string;
-}
-
-export interface CandidateContext {
-  role?: string;
-  experience?: string;
-  difficulty?: string;
-  interviewType?: string;
-  techStack?: string[];
-  interviewerId?: string;
-  numQuestions?: number;
-  timeLimit?: string;
-  allowFollowUps?: boolean;
-  jobDescription?: string;
-  resumeText?: string;
-}
-
-export interface ChatRequest {
-  messages: ChatMessage[];
-  sessionId: string;
-  interviewType?:
-    'TECHNICAL' | 'BEHAVIOURAL' | 'SYSTEM_DESIGN' | 'HR' | 'MIXED';
-  candidateContext?: CandidateContext;
-}
+export type { ChatMessage, CandidateContext, ChatRequest };
 
 export interface SSEChunkEvent {
   type: 'chunk';
@@ -97,59 +79,14 @@ export function sseHeaders(extraHeaders?: Record<string, string>): Headers {
 }
 
 export function validateChatRequest(body: unknown): ChatRequest {
-  if (typeof body !== 'object' || body === null) {
-    throw new BadRequestError('Request body must be a JSON object.');
-  }
-  const b = body as Record<string, unknown>;
-
-  if (!Array.isArray(b.messages) || b.messages.length === 0) {
-    throw new BadRequestError('`messages` must be a non-empty array.');
-  }
-  if (b.messages.length > 50) {
-    throw new BadRequestError('`messages` must not exceed 50 turns.');
-  }
-
-  for (const msg of b.messages as unknown[]) {
-    if (
-      typeof msg !== 'object' ||
-      msg === null ||
-      !['user', 'model'].includes(
-        (msg as Record<string, unknown>).role as string,
-      ) ||
-      typeof (msg as Record<string, unknown>).content !== 'string' ||
-      ((msg as Record<string, unknown>).content as string).length === 0
-    ) {
-      throw new BadRequestError(
-        `Each message must have \`role\` ('user' | 'model') and non-empty \`content\` string.`,
-      );
+  try {
+    return chatRequestSchema.parse(body);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      throw new ValidationError('Validation failed', err.issues);
     }
-    if (((msg as Record<string, unknown>).content as string).length > 8_000) {
-      throw new BadRequestError(
-        'Individual message content must not exceed 8000 characters.',
-      );
-    }
+    throw err;
   }
-
-  if (typeof b.sessionId !== 'string' || b.sessionId.trim().length === 0) {
-    throw new BadRequestError('`sessionId` must be a non-empty string.');
-  }
-
-  const result: ChatRequest = {
-    messages: b.messages as ChatMessage[],
-    sessionId: b.sessionId as string,
-  };
-
-  if (b.interviewType !== undefined) {
-    result.interviewType = b.interviewType as NonNullable<
-      ChatRequest['interviewType']
-    >;
-  }
-  if (b.candidateContext !== undefined) {
-    result.candidateContext = b.candidateContext as NonNullable<
-      ChatRequest['candidateContext']
-    >;
-  }
-  return result;
 }
 
 export class ChatService {

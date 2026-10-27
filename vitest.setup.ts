@@ -11,6 +11,8 @@ process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||= 'test-anon-key';
 process.env.GROQ_API_KEY ||= 'gsk_test_groq_api_key_for_testing';
 process.env.DATABASE_URL ||=
   'postgresql://postgres:postgres@localhost:5432/postgres';
+process.env.KV_REST_API_URL ||= 'https://test-kv.upstash.io';
+process.env.KV_REST_API_TOKEN ||= 'test-kv-token';
 
 // Vitest runs in a jsdom environment where 'server-only' could throw or fail resolution.
 // Mocking it ensures server-side modules can be imported and tested cleanly.

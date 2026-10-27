@@ -84,3 +84,12 @@ export class RateLimitError extends AppError {
     super(message, 429, 'RATE_LIMIT_EXCEEDED', details);
   }
 }
+
+export class ConflictError extends AppError {
+  constructor(
+    message = 'Resource conflict or operation in progress',
+    details?: unknown,
+  ) {
+    super(message, 409, 'CONFLICT', details);
+  }
+}
