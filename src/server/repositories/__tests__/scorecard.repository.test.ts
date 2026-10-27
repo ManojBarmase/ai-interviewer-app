@@ -3,9 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   HiringRecommendation,
   InterviewType,
+  Prisma,
   prisma,
 } from '@/server/db/prisma';
-import { scorecardRepository } from '@/server/repositories/scorecard.repository';
+import {
+  normalizeInterviewType,
+  normalizeRecommendation,
+  scorecardRepository,
+} from '@/server/repositories/scorecard.repository';
 import { decryptText, encryptText } from '@/server/utils/crypto';
 
 vi.mock('@/server/db/prisma', async (importOriginal) => {
@@ -41,14 +46,208 @@ vi.mock('@/server/db/prisma', async (importOriginal) => {
   };
 });
 
-describe('ScorecardRepository with PII Encryption', () => {
+describe('ScorecardRepository and Normalization Utilities', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('saveEvaluation', () => {
-    it('encrypts narrative feedback fields before persisting to database', async () => {
-      let capturedScorecardPayload: Record<string, unknown> | null = null;
+  describe('normalizeRecommendation enum mapping', () => {
+    it('correctly maps valid recommendation strings to HiringRecommendation enums', () => {
+      expect(normalizeRecommendation('STRONG_YES')).toBe(
+        HiringRecommendation.STRONG_YES,
+      );
+      expect(normalizeRecommendation('YES')).toBe(HiringRecommendation.YES);
+      expect(normalizeRecommendation('NEUTRAL')).toBe(
+        HiringRecommendation.NEUTRAL,
+      );
+      expect(normalizeRecommendation('NO')).toBe(HiringRecommendation.NO);
+      expect(normalizeRecommendation('STRONG_NO')).toBe(
+        HiringRecommendation.STRONG_NO,
+      );
+    });
+
+    it('falls back to NEUTRAL for undefined, null, or unknown values', () => {
+      expect(normalizeRecommendation(undefined)).toBe(
+        HiringRecommendation.NEUTRAL,
+      );
+      expect(normalizeRecommendation(null)).toBe(HiringRecommendation.NEUTRAL);
+      expect(normalizeRecommendation('MAYBE')).toBe(
+        HiringRecommendation.NEUTRAL,
+      );
+      expect(normalizeRecommendation('')).toBe(HiringRecommendation.NEUTRAL);
+      expect(normalizeRecommendation('HIRE')).toBe(
+        HiringRecommendation.NEUTRAL,
+      );
+    });
+  });
+
+  describe('normalizeInterviewType enum mapping', () => {
+    it('correctly maps variations of interview types', () => {
+      expect(normalizeInterviewType('BEHAVIORAL')).toBe(
+        InterviewType.BEHAVIOURAL,
+      );
+      expect(normalizeInterviewType('BEHAVIOURAL')).toBe(
+        InterviewType.BEHAVIOURAL,
+      );
+      expect(normalizeInterviewType(' behavioral ')).toBe(
+        InterviewType.BEHAVIOURAL,
+      );
+
+      expect(normalizeInterviewType('SYSTEM_DESIGN')).toBe(
+        InterviewType.SYSTEM_DESIGN,
+      );
+      expect(normalizeInterviewType('system-design')).toBe(
+        InterviewType.SYSTEM_DESIGN,
+      );
+      expect(normalizeInterviewType('SYSTEMDESIGN')).toBe(
+        InterviewType.SYSTEM_DESIGN,
+      );
+
+      expect(normalizeInterviewType('HR')).toBe(InterviewType.HR);
+      expect(normalizeInterviewType('HUMAN_RESOURCES')).toBe(InterviewType.HR);
+      expect(normalizeInterviewType('human-resources')).toBe(InterviewType.HR);
+
+      expect(normalizeInterviewType('FULL_LOOP')).toBe(InterviewType.MIXED);
+      expect(normalizeInterviewType('FULLLOOP')).toBe(InterviewType.MIXED);
+      expect(normalizeInterviewType('MIXED')).toBe(InterviewType.MIXED);
+      expect(normalizeInterviewType('full-loop')).toBe(InterviewType.MIXED);
+
+      expect(normalizeInterviewType('CODING')).toBe(InterviewType.TECHNICAL);
+      expect(normalizeInterviewType('TECHNICAL')).toBe(InterviewType.TECHNICAL);
+      expect(normalizeInterviewType('technical')).toBe(InterviewType.TECHNICAL);
+    });
+
+    it('falls back to TECHNICAL for null, undefined, empty, or unknown strings', () => {
+      expect(normalizeInterviewType(null)).toBe(InterviewType.TECHNICAL);
+      expect(normalizeInterviewType(undefined)).toBe(InterviewType.TECHNICAL);
+      expect(normalizeInterviewType('' as any)).toBe(InterviewType.TECHNICAL);
+      expect(normalizeInterviewType(123 as any)).toBe(InterviewType.TECHNICAL);
+      expect(normalizeInterviewType('UNKNOWN_DOMAIN')).toBe(
+        InterviewType.TECHNICAL,
+      );
+    });
+  });
+
+  describe('saveEvaluation transactional upsert', () => {
+    it('atomically upserts user, session, and scorecard with all score dimensions', async () => {
+      const userUpsertMock = vi.fn().mockResolvedValue({});
+      const sessionUpsertMock = vi.fn().mockResolvedValue({});
+      const scorecardUpsertMock = vi.fn().mockResolvedValue({});
+
+      vi.mocked(prisma.$transaction).mockImplementationOnce(
+        async (callback: any) => {
+          const tx = {
+            user: { upsert: userUpsertMock },
+            session: { upsert: sessionUpsertMock },
+            scorecard: { upsert: scorecardUpsertMock },
+          };
+          return callback(tx);
+        },
+      );
+
+      const startedAt = new Date('2026-10-27T10:00:00Z');
+      const endedAt = new Date('2026-10-27T10:45:00Z');
+      const mockQuestions = [
+        {
+          id: 'q1',
+          question: 'Explain React Server Components',
+          score: 9,
+          feedback: 'Comprehensive understanding',
+        },
+      ];
+
+      await scorecardRepository.saveEvaluation({
+        userId: 'usr-42',
+        userEmail: 'dev@company.com',
+        userFirstName: 'Jordan',
+        sessionId: 'sess-99',
+        sessionTitle: 'Senior Systems Architect Interview',
+        interviewType: InterviewType.SYSTEM_DESIGN,
+        sessionStartedAt: startedAt,
+        sessionEndedAt: endedAt,
+        calculatedDuration: 2700,
+        technicalScore: 9.2,
+        communicationScore: 8.8,
+        problemSolvingScore: 9.5,
+        cultureFitScore: 8.5,
+        overallScore: 9.0,
+        strengths: ['Deep distributed systems knowledge', 'Clear communicator'],
+        weaknesses: ['Could elaborate more on observability metrics'],
+        actionableFeedback: 'Solid hire for the infrastructure team.',
+        recommendation: 'STRONG_YES',
+        questions: mockQuestions,
+      });
+
+      // 1. Validate User Upsert
+      expect(userUpsertMock).toHaveBeenCalledWith({
+        where: { id: 'usr-42' },
+        update: {},
+        create: {
+          id: 'usr-42',
+          email: 'dev@company.com',
+          name: 'Jordan',
+        },
+      });
+
+      // 2. Validate Session Upsert
+      expect(sessionUpsertMock).toHaveBeenCalledWith({
+        where: { id: 'sess-99' },
+        update: {
+          status: 'COMPLETED',
+          title: 'Senior Systems Architect Interview',
+          interviewType: InterviewType.SYSTEM_DESIGN,
+          startedAt,
+          endedAt,
+          durationSeconds: 2700,
+        },
+        create: {
+          id: 'sess-99',
+          userId: 'usr-42',
+          title: 'Senior Systems Architect Interview',
+          interviewType: InterviewType.SYSTEM_DESIGN,
+          status: 'COMPLETED',
+          startedAt,
+          endedAt,
+          durationSeconds: 2700,
+        },
+      });
+
+      // 3. Validate Scorecard Upsert
+      expect(scorecardUpsertMock).toHaveBeenCalledTimes(1);
+      const scorecardArgs = scorecardUpsertMock.mock.calls[0]?.[0];
+      expect(scorecardArgs).toBeDefined();
+
+      expect(scorecardArgs.where).toEqual({ sessionId: 'sess-99' });
+
+      // Check create and update properties
+      expect(scorecardArgs.create.userId).toBe('usr-42');
+      expect(scorecardArgs.create.sessionId).toBe('sess-99');
+      expect(scorecardArgs.create.technicalScore).toBe(9.2);
+      expect(scorecardArgs.create.communicationScore).toBe(8.8);
+      expect(scorecardArgs.create.problemSolvingScore).toBe(9.5);
+      expect(scorecardArgs.create.cultureFitScore).toBe(8.5);
+      expect(scorecardArgs.create.overallScore).toBe(9.0);
+      expect(scorecardArgs.create.recommendation).toBe(
+        HiringRecommendation.STRONG_YES,
+      );
+      expect(scorecardArgs.create.dimensionBreakdown).toBe(
+        JSON.stringify(mockQuestions),
+      );
+
+      // Verify AES-256-GCM encryption of sensitive narrative fields
+      expect(decryptText(scorecardArgs.create.strengths)).toBe(
+        'Deep distributed systems knowledge\n- Clear communicator',
+      );
+      expect(decryptText(scorecardArgs.create.weaknesses)).toBe(
+        'Could elaborate more on observability metrics',
+      );
+      expect(decryptText(scorecardArgs.create.detailedFeedback)).toBe(
+        'Solid hire for the infrastructure team.',
+      );
+    });
+
+    it('sets dimensionBreakdown to JsonNull when questions parameter is omitted', async () => {
+      let capturedArgs: any = null;
 
       vi.mocked(prisma.$transaction).mockImplementationOnce(
         async (callback: any) => {
@@ -56,9 +255,9 @@ describe('ScorecardRepository with PII Encryption', () => {
             user: { upsert: vi.fn() },
             session: { upsert: vi.fn() },
             scorecard: {
-              upsert: vi.fn().mockImplementation(({ create }) => {
-                capturedScorecardPayload = create;
-                return Promise.resolve(create);
+              upsert: vi.fn().mockImplementation((args) => {
+                capturedArgs = args;
+                return Promise.resolve(args);
               }),
             },
           };
@@ -66,47 +265,34 @@ describe('ScorecardRepository with PII Encryption', () => {
         },
       );
 
-      const rawStrengths = [
-        'Deep understanding of React 19 RSC',
-        'Great INP diagnosis',
-      ];
-      const rawWeaknesses = ['Edge caching details were light'];
-      const rawDetailedFeedback =
-        'Candidate performed at senior level in frontend architecture.';
-
       await scorecardRepository.saveEvaluation({
-        userId: 'user-123',
-        userEmail: 'candidate@example.com',
-        userFirstName: 'Alex',
-        sessionId: 'session-456',
-        sessionTitle: 'Frontend Technical Interview',
+        userId: 'usr-1',
+        userEmail: 'user@example.com',
+        userFirstName: 'Sam',
+        sessionId: 'sess-1',
+        sessionTitle: 'General Interview',
         interviewType: InterviewType.TECHNICAL,
         sessionStartedAt: new Date(),
         sessionEndedAt: new Date(),
-        calculatedDuration: 2700,
-        technicalScore: 9,
-        communicationScore: 8.5,
-        problemSolvingScore: 9,
-        cultureFitScore: 8.5,
-        overallScore: 8.8,
-        strengths: rawStrengths,
-        weaknesses: rawWeaknesses,
-        actionableFeedback: rawDetailedFeedback,
-        recommendation: 'STRONG_YES',
+        calculatedDuration: 1800,
+        technicalScore: 7,
+        communicationScore: 7,
+        problemSolvingScore: 7,
+        cultureFitScore: 7,
+        overallScore: 7,
+        strengths: ['Quick learner'],
+        weaknesses: ['Needs more testing practice'],
+        actionableFeedback: 'Progressing well.',
+        recommendation: 'NEUTRAL',
+        // questions omitted
       });
 
-      expect(capturedScorecardPayload).not.toBeNull();
-      const payload = capturedScorecardPayload as any;
-
-      // Ensure fields are NOT saved as plaintext
-      expect(payload.strengths).not.toBe(rawStrengths.join('\n- '));
-      expect(payload.weaknesses).not.toBe(rawWeaknesses.join('\n- '));
-      expect(payload.detailedFeedback).not.toBe(rawDetailedFeedback);
-
-      // Verify that the saved strings are valid AES-256-GCM ciphertexts and decrypt cleanly
-      expect(decryptText(payload.strengths)).toBe(rawStrengths.join('\n- '));
-      expect(decryptText(payload.weaknesses)).toBe(rawWeaknesses.join('\n- '));
-      expect(decryptText(payload.detailedFeedback)).toBe(rawDetailedFeedback);
+      expect(capturedArgs).not.toBeNull();
+      expect(capturedArgs.create.dimensionBreakdown).toBe(Prisma.JsonNull);
+      expect(capturedArgs.update.dimensionBreakdown).toBe(Prisma.JsonNull);
+      expect(capturedArgs.create.recommendation).toBe(
+        HiringRecommendation.NEUTRAL,
+      );
     });
   });
 
@@ -163,6 +349,14 @@ describe('ScorecardRepository with PII Encryption', () => {
       expect(result?.detailedFeedback).toBe('Legacy unencrypted feedback');
     });
 
+    it('returns null when scorecard is not found by sessionId', async () => {
+      vi.mocked(prisma.scorecard.findUnique).mockResolvedValueOnce(null);
+
+      const result =
+        await scorecardRepository.findBySessionId('non-existent-sess');
+      expect(result).toBeNull();
+    });
+
     it('decrypts fields when retrieving a scorecard by id', async () => {
       const plainStrengths = 'Strong STAR communication';
       const encryptedScorecard = {
@@ -183,6 +377,13 @@ describe('ScorecardRepository with PII Encryption', () => {
       expect(result?.strengths).toBe(plainStrengths);
       expect(result?.weaknesses).toBeNull();
       expect(result?.detailedFeedback).toBeNull();
+    });
+
+    it('returns null when scorecard is not found by id', async () => {
+      vi.mocked(prisma.scorecard.findUnique).mockResolvedValueOnce(null);
+
+      const result = await scorecardRepository.findById('non-existent-id');
+      expect(result).toBeNull();
     });
   });
 });

@@ -1,3 +1,5 @@
+import fs from 'fs';
+
 import { defineConfig, devices } from '@playwright/test';
 
 /**
@@ -28,9 +30,12 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev',
+    command:
+      process.env.CI && fs.existsSync('./.next')
+        ? 'npm run start'
+        : 'npm run dev',
     url: 'http://localhost:3000',
-    reuseExistingServer: true,
+    reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
       DEMO_MODE_ENABLED: 'true',
