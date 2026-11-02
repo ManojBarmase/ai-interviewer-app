@@ -32,7 +32,7 @@
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "@ricky0123/vad-web": "^0.0.31",
-    "@sentry/nextjs": "^11.9.0",
+    "@sentry/nextjs": "^11.10.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.2",
     "@upstash/ratelimit": "^2.2.0",
