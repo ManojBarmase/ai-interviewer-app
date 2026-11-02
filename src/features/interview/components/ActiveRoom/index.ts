@@ -13,4 +13,7 @@ export type { InterviewTimerProps } from './InterviewTimer';
 export { InterviewControls } from './InterviewControls';
 export type { InterviewControlsProps } from './InterviewControls';
 
+export { CandidateAnswerBox } from './CandidateAnswerBox';
+export type { CandidateAnswerBoxProps } from './CandidateAnswerBox';
+
 export { ActiveInterviewRoom } from './ActiveInterviewRoom';

@@ -11,6 +11,7 @@ import { Button } from '@/components/ui';
 import {
   INTERVIEWERS_MAP,
   DEFAULT_INTERVIEWER,
+  buildOpeningGreeting,
 } from '../../constants/personas';
 import {
   startRecording,
@@ -18,6 +19,8 @@ import {
   speakText,
   stopSpeaking,
   updateSessionTranscript,
+  registerActiveVADProvider,
+  SileroVADProvider,
 } from '../../services/audioService';
 import {
   useInterviewStore,
@@ -30,6 +33,7 @@ import {
   TranscriptHistory,
   InterviewTimer,
   InterviewControls,
+  CandidateAnswerBox,
 } from './';
 
 /**
@@ -44,21 +48,19 @@ import {
  * - InterviewControls: Dock controls, turn submissions & modals
  */
 export function ActiveInterviewRoom() {
-  const {
-    phase,
-    liveTranscript,
-    currentQuestion,
-    transitionTo,
-    setLiveTranscript,
-    commitTranscript,
-    completeTurn,
-    endInterview,
-    setError,
-    turns,
-    session,
-    startSession,
-    candidateContext,
-  } = useInterviewStore();
+  const phase = useInterviewStore((s) => s.phase);
+  const currentQuestion = useInterviewStore((s) => s.currentQuestion);
+  const turns = useInterviewStore((s) => s.turns);
+  const session = useInterviewStore((s) => s.session);
+  const candidateContext = useInterviewStore((s) => s.candidateContext);
+
+  const transitionTo = useInterviewStore((s) => s.transitionTo);
+  const setLiveTranscript = useInterviewStore((s) => s.setLiveTranscript);
+  const commitTranscript = useInterviewStore((s) => s.commitTranscript);
+  const completeTurn = useInterviewStore((s) => s.completeTurn);
+  const endInterview = useInterviewStore((s) => s.endInterview);
+  const setError = useInterviewStore((s) => s.setError);
+  const startSession = useInterviewStore((s) => s.startSession);
 
   const [aiStreamingText, setAiStreamingText] = useState('');
   const [sttNotice, setSttNotice] = useState<string | null>(null);
@@ -69,6 +71,13 @@ export function ActiveInterviewRoom() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const router = useRouter();
   const evaluationStartedRef = useRef(false);
+  const vadProviderRef = useRef<SileroVADProvider | null>(null);
+  const [bargeInNotice, setBargeInNotice] = useState<string | null>(null);
+
+  // Ref to CandidateAnswerBox's typewriter flushNow — called before submit to ensure
+  // all pending animated words are committed to the store (Invariant 6: Instant Flush on Submit).
+  const typewriterFlushRef = useRef<(() => string) | null>(null);
+  const lastSubmittedTranscriptRef = useRef('');
 
   // -- Submission Mutex Locks & Turn Transition Guards -----------------------
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -161,6 +170,10 @@ export function ActiveInterviewRoom() {
     return () => {
       stopRecording();
       stopSpeaking();
+      if (vadProviderRef.current) {
+        void vadProviderRef.current.destroy();
+        vadProviderRef.current = null;
+      }
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
@@ -180,8 +193,7 @@ export function ActiveInterviewRoom() {
         await startWebcam();
         if (!isSubscribed) return;
 
-        const roleText = candidateContext?.role || 'a position';
-        const firstQuestion = `Hello! I am your AI interviewer. I see you are applying for ${roleText}. To get started, could you please introduce yourself?`;
+        const firstQuestion = buildOpeningGreeting(candidateContext);
 
         const totalQuestions = candidateContext?.numQuestions || 6;
         startSession(
@@ -213,6 +225,10 @@ export function ActiveInterviewRoom() {
         try {
           stopRecording();
           stopSpeaking();
+          if (vadProviderRef.current) {
+            void vadProviderRef.current.destroy();
+            vadProviderRef.current = null;
+          }
           if (webcamStreamRef.current) {
             webcamStreamRef.current.getTracks().forEach((t) => t.stop());
             webcamStreamRef.current = null;
@@ -361,11 +377,21 @@ export function ActiveInterviewRoom() {
       return;
     }
 
+    // 1. Instantly flush typewriter and obtain full committed text synchronously
+    const flushedText = typewriterFlushRef.current?.() || state.liveTranscript;
+    const finalAnswer = flushedText.trim();
+
     isSubmittingRef.current = true;
     setIsSubmitting(true);
+
+    // 2. Abort VAD speech buffers and invalidate any in-flight Whisper requests for this turn
+    vadProviderRef.current?.abortTurn();
     stopRecording();
 
-    state.commitTranscript(state.liveTranscript.trim(), 1.0);
+    // 3. Commit clean final answer to Store and transition
+    lastSubmittedTranscriptRef.current = finalAnswer;
+    state.commitTranscript(finalAnswer, 1.0);
+    state.setLiveTranscript('');
     state.transitionTo(InterviewPhase.PROCESSING);
   }, []);
 
@@ -377,9 +403,13 @@ export function ActiveInterviewRoom() {
 
     isSubmittingRef.current = true;
     setIsSubmitting(true);
+
+    vadProviderRef.current?.abortTurn();
     stopRecording();
 
+    lastSubmittedTranscriptRef.current = '[Candidate skipped this question]';
     state.commitTranscript('[Candidate skipped this question]', 1.0);
+    state.setLiveTranscript('');
     state.transitionTo(InterviewPhase.PROCESSING);
   }, []);
 
@@ -395,16 +425,20 @@ export function ActiveInterviewRoom() {
       state.session?.totalQuestions ?? candidateContext?.numQuestions ?? 6;
     const isLastQuestion = state.turns.length + 1 >= totalQuestions;
 
+    const submittedTranscript =
+      lastSubmittedTranscriptRef.current || state.liveTranscript;
+
     const completedTurnData = {
       question: state.currentQuestion || '',
-      rawTranscript: state.liveTranscript,
-      wordCount: state.liveTranscript.split(/\s+/).filter(Boolean).length,
+      rawTranscript: submittedTranscript,
+      wordCount: submittedTranscript.split(/\s+/).filter(Boolean).length,
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
     };
 
     if (isLastQuestion) {
       baseTranscriptRef.current = '';
+      lastSubmittedTranscriptRef.current = '';
       updateSessionTranscript('');
       if (useInterviewStore.getState().currentTurnIndex === targetTurnIndex) {
         completeTurn(completedTurnData);
@@ -426,7 +460,7 @@ export function ActiveInterviewRoom() {
     });
     historyMessages.push({
       role: 'user' as const,
-      content: state.liveTranscript || '(Silence)',
+      content: submittedTranscript || '(Silence)',
     });
 
     const ac = new AbortController();
@@ -494,6 +528,7 @@ export function ActiveInterviewRoom() {
       const decoder = new TextDecoder();
       let fullText = '';
       let buffer = '';
+      let streamError: string | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -515,34 +550,50 @@ export function ActiveInterviewRoom() {
               fullText += parsed.text;
               setAiStreamingText(fullText);
             } else if (parsed.type === 'error') {
-              throw new Error(
-                parsed.message || 'Stream emitted an error event.',
-              );
+              streamError = parsed.message || 'Stream emitted an error event.';
+              break;
             }
-          } catch (jsonErr: unknown) {
-            const jsonMsg =
-              jsonErr instanceof Error ? jsonErr.message : String(jsonErr);
-            if (!jsonMsg.includes('JSON')) {
-              throw jsonErr;
-            }
+          } catch {
+            // Ignore incomplete chunks awaiting subsequent bytes
           }
         }
+
+        if (streamError) break;
+      }
+
+      if (streamError) {
+        setError({
+          code: 'AI_RESPONSE_FAILED',
+          message: streamError,
+          retryable: true,
+        });
+        return;
       }
 
       const nextQuestionText = fullText.trim();
       if (nextQuestionText) {
         baseTranscriptRef.current = '';
+        lastSubmittedTranscriptRef.current = '';
         updateSessionTranscript('');
         // Guard against race conditions: verify turn index hasn't changed
         if (useInterviewStore.getState().currentTurnIndex === targetTurnIndex) {
           completeTurn(completedTurnData, nextQuestionText);
         }
       } else {
-        throw new Error('AI returned an empty response.');
+        setError({
+          code: 'AI_RESPONSE_FAILED',
+          message: 'AI returned an empty response. Please try again.',
+          retryable: true,
+        });
       }
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') return;
-      console.error('Turn processing failed:', err);
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(
+          '[ActiveInterviewRoom] Turn processing failed:',
+          err instanceof Error ? err.message : String(err),
+        );
+      }
       setError({
         code: 'AI_RESPONSE_FAILED',
         message:
@@ -559,15 +610,23 @@ export function ActiveInterviewRoom() {
     }
   }, [candidateContext, completeTurn, setError]);
 
+  const processTurnRef = useRef(processTurn);
+  useEffect(() => {
+    processTurnRef.current = processTurn;
+  }, [processTurn]);
+
   // -- Synchronize Speech Engine & Phase State Machine ------------------------
   useEffect(() => {
     let isCancelled = false;
 
     if (phase === InterviewPhase.SPEAKING) {
-      // Clean up previous STT session and reset buffers
+      // Clean up previous STT session and reset buffers for new question
       stopRecording();
       baseTranscriptRef.current = '';
+      lastSubmittedTranscriptRef.current = '';
       updateSessionTranscript('');
+      vadProviderRef.current?.updateSessionTranscript('');
+      setLiveTranscript('');
       isSubmittingRef.current = false;
 
       if (!currentQuestion) {
@@ -587,6 +646,17 @@ export function ActiveInterviewRoom() {
         .catch((err: { code?: string; message?: string } | Error) => {
           const errCode = 'code' in err ? err.code : '';
           const errMsg = err.message || 'Speech synthesis failed.';
+          if (errCode === 'INTERRUPTED_BY_USER') {
+            // Barge-in: candidate interrupted AI speech.
+            // Transition store state smoothly to LISTENING without logging error boundary.
+            if (
+              !isCancelled &&
+              useInterviewStore.getState().phase === InterviewPhase.SPEAKING
+            ) {
+              transitionTo(InterviewPhase.LISTENING);
+            }
+            return;
+          }
           if (errCode !== 'SYNTHESIS_CANCELLED') {
             setError({
               code: 'TTS_FAILED',
@@ -597,83 +667,71 @@ export function ActiveInterviewRoom() {
           }
         });
     } else if (phase === InterviewPhase.LISTENING) {
-      // Entering listening phase: reset buffers for the candidate's turn
-      baseTranscriptRef.current = '';
-      updateSessionTranscript('');
       isSubmittingRef.current = false;
 
-      if (isMicMutedRef.current) {
-        stopRecording();
-        return;
-      }
+      // Silero VAD + Groq Whisper serves as primary STT.
+      // Fall back to browser STT only if Silero VAD is not active/supported.
+      if (!vadProviderRef.current && !isMicMutedRef.current) {
+        let stopRec: () => void = () => {};
+        try {
+          stopRec = startRecording(
+            {
+              onInterimTranscript: (interimText: string) => {
+                if (!isCancelled && !isSubmittingRef.current) {
+                  setSttNotice(null);
+                  setLiveTranscript(interimText);
+                  baseTranscriptRef.current = interimText;
+                }
+              },
+              onFinalTranscript: (finalText: string, confidence: number) => {
+                if (!isCancelled && !isSubmittingRef.current) {
+                  setSttNotice(null);
+                  setLiveTranscript(finalText);
+                  baseTranscriptRef.current = finalText;
+                  commitTranscript(finalText, confidence);
+                }
+              },
+              onError: (err: { code?: string; message?: string }) => {
+                if (
+                  !isCancelled &&
+                  err.code !== 'RECOGNITION_ABORTED' &&
+                  err.code !== 'NO_SPEECH_DETECTED'
+                ) {
+                  console.warn(
+                    '[ActiveInterviewRoom] Speech recognition fallback degradation:',
+                    err,
+                  );
+                  setSttNotice(
+                    err.message ||
+                      'A network error interrupted speech recognition. Check your connection.',
+                  );
+                }
+              },
+              onEnd: () => {},
+            },
+            {
+              language: 'en-US',
+              continuous: true,
+              existingStream: webcamStreamRef.current ?? undefined,
+            },
+          );
+        } catch (err: unknown) {
+          console.warn(
+            '[ActiveInterviewRoom] Fallback speech recognition unavailable:',
+            err,
+          );
+        }
 
-      let stopRec: () => void = () => {};
-      try {
-        stopRec = startRecording(
-          {
-            onInterimTranscript: (interimText: string) => {
-              if (!isCancelled && !isSubmittingRef.current) {
-                setSttNotice(null);
-                setLiveTranscript(interimText);
-                baseTranscriptRef.current = interimText;
-              }
-            },
-            onFinalTranscript: (finalText: string, confidence: number) => {
-              if (!isCancelled && !isSubmittingRef.current) {
-                setSttNotice(null);
-                setLiveTranscript(finalText);
-                baseTranscriptRef.current = finalText;
-                commitTranscript(finalText, confidence);
-              }
-            },
-            onError: (err: { code?: string; message?: string }) => {
-              if (
-                !isCancelled &&
-                err.code !== 'RECOGNITION_ABORTED' &&
-                err.code !== 'NO_SPEECH_DETECTED'
-              ) {
-                // Graceful degradation: do NOT crash the interview or enter ERROR phase!
-                // Allow candidate to continue typing their response or retry the microphone.
-                console.warn(
-                  '[ActiveInterviewRoom] Speech recognition network/audio degradation:',
-                  err,
-                );
-                setSttNotice(
-                  err.message ||
-                    'A network error interrupted speech recognition. Check your connection.',
-                );
-              }
-            },
-            onEnd: () => {
-              // Enterprise Rule: STT onEnd MUST NEVER auto-submit or skip question.
-              // Turn progression is strictly driven by candidate manual submission.
-            },
-          },
-          { language: 'en-US', continuous: true },
-        );
-      } catch (err: unknown) {
-        console.warn(
-          '[ActiveInterviewRoom] Failed to initialize speech recognition:',
-          err,
-        );
-        setTimeout(() => {
-          if (!isCancelled) {
-            setSttNotice(
-              'Speech recognition is not accessible in this environment. You can type your responses in the box below.',
-            );
-          }
-        }, 0);
+        return () => {
+          stopRec();
+        };
       }
-
-      return () => {
-        stopRec();
-      };
     } else if (phase === InterviewPhase.PROCESSING) {
       stopRecording();
       stopSpeaking();
       const processTimer = setTimeout(() => {
         if (!isCancelled) {
-          processTurn();
+          processTurnRef.current();
         }
       }, 0);
       return () => {
@@ -691,11 +749,11 @@ export function ActiveInterviewRoom() {
     };
   }, [
     phase,
+    isMicMuted,
     currentQuestion,
     transitionTo,
     setLiveTranscript,
     commitTranscript,
-    processTurn,
     setError,
   ]);
 
@@ -707,6 +765,114 @@ export function ActiveInterviewRoom() {
       }
     }
   }, [phase, isCameraOn]);
+
+  // ── Silero VAD Neural Voice Activity Detection & Whisper STT (Mount-Once Lifecycle) ────
+  const isVADSessionActive =
+    phase !== InterviewPhase.IDLE && phase !== InterviewPhase.EVALUATING;
+
+  useEffect(() => {
+    if (!isVADSessionActive) {
+      return;
+    }
+
+    let isDisposed = false;
+    const vad = new SileroVADProvider();
+    vadProviderRef.current = vad;
+    registerActiveVADProvider(vad);
+
+    vad
+      .start(
+        {
+          onInterimTranscript: (interimText: string) => {
+            if (
+              !isDisposed &&
+              !isMicMutedRef.current &&
+              !isSubmittingRef.current &&
+              useInterviewStore.getState().phase === InterviewPhase.LISTENING
+            ) {
+              setSttNotice(null);
+              setLiveTranscript(interimText);
+              baseTranscriptRef.current = interimText;
+            }
+          },
+          onFinalTranscript: (finalText: string, confidence: number) => {
+            if (
+              !isDisposed &&
+              !isMicMutedRef.current &&
+              !isSubmittingRef.current &&
+              useInterviewStore.getState().phase === InterviewPhase.LISTENING
+            ) {
+              setSttNotice(null);
+              setLiveTranscript(finalText);
+              baseTranscriptRef.current = finalText;
+              commitTranscript(finalText, confidence);
+            }
+          },
+          onError: (err) => {
+            if (!isDisposed) {
+              console.warn('[SileroVAD] Detection error/warning:', err);
+              if (
+                err.code !== 'NO_SPEECH_DETECTED' &&
+                err.code !== 'RECOGNITION_ABORTED'
+              ) {
+                setSttNotice(
+                  err.message || 'Speech recognition degradation detected.',
+                );
+              }
+            }
+          },
+          onEnd: () => {},
+          onSpeechStart: () => {
+            if (isDisposed || isMicMutedRef.current) return;
+            const currentPhase = useInterviewStore.getState().phase;
+
+            if (currentPhase === InterviewPhase.SPEAKING) {
+              // ── Dynamic Barge-In (Interruption Handling) ─────────────────
+              setBargeInNotice('Candidate interrupted — Listening to you...');
+              setTimeout(() => {
+                if (!isDisposed) setBargeInNotice(null);
+              }, 2200);
+
+              stopSpeaking('INTERRUPTED_BY_USER');
+              transitionTo(InterviewPhase.LISTENING);
+            }
+          },
+          // Enterprise Rule: Turn progression is strictly driven by candidate manual submission
+          // via the "Submit answer" button. Auto-submit on silence is intentionally omitted.
+        },
+        {
+          positiveSpeechThreshold: 0.8,
+          negativeSpeechThreshold: 0.35,
+          redemptionFrames: 8,
+          transcribeWithWhisper: true,
+          existingStream: webcamStreamRef.current ?? undefined,
+        },
+      )
+      .catch((err: unknown) => {
+        if (!isDisposed) {
+          console.warn('[SileroVAD] Initialization notice:', err);
+        }
+      });
+
+    return () => {
+      isDisposed = true;
+      registerActiveVADProvider(null);
+      void vad.destroy();
+      if (vadProviderRef.current === vad) {
+        vadProviderRef.current = null;
+      }
+    };
+  }, [isVADSessionActive, transitionTo, setLiveTranscript, commitTranscript]);
+
+  // Teardown VAD immediately when interview is completed or evaluating
+  useEffect(() => {
+    if (phase === InterviewPhase.EVALUATING || phase === InterviewPhase.IDLE) {
+      if (vadProviderRef.current) {
+        void vadProviderRef.current.destroy();
+        vadProviderRef.current = null;
+      }
+    }
+  }, [phase]);
 
   // ── Render States ──────────────────────────────────────────────────────────
   const isListening = phase === InterviewPhase.LISTENING;
@@ -744,7 +910,6 @@ export function ActiveInterviewRoom() {
             variant="primary"
             onClick={() => {
               useInterviewStore.getState().acknowledgeError();
-              transitionTo(InterviewPhase.IDLE);
             }}
           >
             Try Again
@@ -782,6 +947,10 @@ export function ActiveInterviewRoom() {
       {/* ── 1. Top Header Bar with Timer & Progress ── */}
       <InterviewTimer
         roleName={roleName}
+        experience={candidateContext?.experience || 'Senior'}
+        difficulty={candidateContext?.difficulty || 'Medium'}
+        interviewType={candidateContext?.interviewType || 'Full loop'}
+        timeLimit={candidateContext?.timeLimit}
         currentTurn={turns.length + 1}
         totalQuestions={numQuestions}
         isListening={isListening}
@@ -828,6 +997,14 @@ export function ActiveInterviewRoom() {
                   : currentQuestion}
               </h3>
 
+              {/* Dynamic Barge-In Interruption Notice */}
+              {bargeInNotice && (
+                <div className="flex items-center gap-2 mb-3 px-3.5 py-2 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs animate-fadeIn shadow-sm">
+                  <span className="w-2 h-2 rounded-full bg-indigo-400 animate-ping shrink-0" />
+                  <span className="font-semibold">{bargeInNotice}</span>
+                </div>
+              )}
+
               {/* Muted Privacy Notice */}
               {isListening && isMicMuted && (
                 <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-xs animate-fadeIn">
@@ -862,18 +1039,32 @@ export function ActiveInterviewRoom() {
                             startRecording(
                               {
                                 onInterimTranscript: (text: string) => {
-                                  setSttNotice(null);
-                                  setLiveTranscript(text);
-                                  baseTranscriptRef.current = text;
+                                  if (
+                                    !isMicMutedRef.current &&
+                                    !isSubmittingRef.current &&
+                                    useInterviewStore.getState().phase ===
+                                      InterviewPhase.LISTENING
+                                  ) {
+                                    setSttNotice(null);
+                                    setLiveTranscript(text);
+                                    baseTranscriptRef.current = text;
+                                  }
                                 },
                                 onFinalTranscript: (
                                   text: string,
                                   conf: number,
                                 ) => {
-                                  setSttNotice(null);
-                                  setLiveTranscript(text);
-                                  baseTranscriptRef.current = text;
-                                  commitTranscript(text, conf);
+                                  if (
+                                    !isMicMutedRef.current &&
+                                    !isSubmittingRef.current &&
+                                    useInterviewStore.getState().phase ===
+                                      InterviewPhase.LISTENING
+                                  ) {
+                                    setSttNotice(null);
+                                    setLiveTranscript(text);
+                                    baseTranscriptRef.current = text;
+                                    commitTranscript(text, conf);
+                                  }
                                 },
                                 onError: (err) => {
                                   if (
@@ -887,8 +1078,22 @@ export function ActiveInterviewRoom() {
                                   }
                                 },
                                 onEnd: () => {},
+                                onProviderChange: (providerName: string) => {
+                                  if (
+                                    providerName === 'AudioStreamSTTProvider'
+                                  ) {
+                                    setSttNotice(
+                                      'Switched to resilient audio stream due to network instability.',
+                                    );
+                                  }
+                                },
                               },
-                              { language: 'en-US', continuous: true },
+                              {
+                                language: 'en-US',
+                                continuous: true,
+                                existingStream:
+                                  webcamStreamRef.current ?? undefined,
+                              },
                             );
                           } catch {
                             // Ignored
@@ -903,28 +1108,13 @@ export function ActiveInterviewRoom() {
                 </div>
               )}
 
-              {/* Answer Input Box */}
-              <div className="w-full bg-[#11131a] border border-indigo-500/30 rounded-xl p-4 min-h-[120px] relative flex flex-col shadow-inner shadow-black/20 focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-400 transition-all">
-                <textarea
-                  className="w-full flex-1 bg-transparent border-none text-sm text-white/80 leading-relaxed resize-none focus:outline-none placeholder:text-white/40 custom-scrollbar"
-                  placeholder={
-                    isMicMuted
-                      ? 'Microphone is muted. You can type your answer here, or click unmute below to speak.'
-                      : 'Speak your answer. It appears here live. You can also type or edit.'
-                  }
-                  value={liveTranscript}
-                  onChange={(e) => {
-                    const text = e.target.value;
-                    setLiveTranscript(text);
-                    baseTranscriptRef.current = text;
-                    updateSessionTranscript(text);
-                  }}
-                  disabled={!isListening || isSubmitting}
-                />
-                <div className="self-end mt-2 text-[10px] text-white/40 font-medium">
-                  {liveTranscript?.split(' ').filter(Boolean).length || 0} words
-                </div>
-              </div>
+              {/* Render-Isolated Candidate Answer Workspace */}
+              <CandidateAnswerBox
+                isListening={isListening}
+                isSubmitting={isSubmitting}
+                isMicMuted={isMicMuted}
+                flushRef={typewriterFlushRef}
+              />
             </div>
           </div>
 
@@ -942,7 +1132,6 @@ export function ActiveInterviewRoom() {
             isListening={isListening}
             isSpeaking={isSpeaking}
             isSubmitting={isSubmitting}
-            liveTranscript={liveTranscript}
             turnsCount={turns.length}
             numQuestions={numQuestions}
             resumeText={candidateContext?.resumeText}

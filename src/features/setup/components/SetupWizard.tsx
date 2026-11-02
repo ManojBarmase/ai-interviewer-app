@@ -281,11 +281,15 @@ export function SetupWizard() {
     useInterviewStore.getState().setCandidateContext({
       role: formData.role,
       experience: formData.experience,
+      difficulty: formData.difficulty,
+      interviewType: formData.interviewType,
       techStack: formData.techStack,
-      resumeText: formData.resumeText || formData.jobDescription,
+      jobDescription: formData.jobDescription,
+      resumeText: formData.resumeText,
       interviewerId: formData.interviewerId,
       numQuestions: formData.numQuestions,
-      interviewType: formData.interviewType,
+      timeLimit: formData.timeLimit,
+      allowFollowUps: formData.allowFollowUps,
     });
     router.push('/interview');
   };

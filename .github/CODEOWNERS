@@ -1,0 +1,38 @@
+# ==============================================================================
+# Enterprise GitHub Code Ownership Specification
+# Reference: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# ==============================================================================
+
+# Global Default Owner
+# Every file not explicitly matched below defaults to the Lead Architect.
+* @ManojBarmase
+
+# ------------------------------------------------------------------------------
+# 1. Authentication, Route Protection & Gateway Proxy
+# ------------------------------------------------------------------------------
+# Critical boundary routing, token refresh logic, and protected prefix guards.
+/src/proxy.ts @ManojBarmase
+
+# ------------------------------------------------------------------------------
+# 2. Authorization, RBAC & Identity Verification
+# ------------------------------------------------------------------------------
+# Role-based access control, resource ownership validation, and demo token checks.
+/src/server/utils/auth-guard.ts @ManojBarmase
+/src/lib/auth/ @ManojBarmase
+
+# ------------------------------------------------------------------------------
+# 3. Database Models, Relations & Prisma Schema
+# ------------------------------------------------------------------------------
+# Core data model changes, migration definitions, and field encryption contracts.
+/prisma/schema.prisma @ManojBarmase
+/prisma/migrations/ @ManojBarmase
+/src/server/db/ @ManojBarmase
+
+# ------------------------------------------------------------------------------
+# 4. CI/CD Workflows, Security Scanners & Deployment Automation
+# ------------------------------------------------------------------------------
+# Pipeline definitions, lint/test quality gates, and automated security scanning.
+/.github/workflows/ @ManojBarmase
+/Dockerfile @ManojBarmase
+/.dockerignore @ManojBarmase
+/next.config.ts @ManojBarmase

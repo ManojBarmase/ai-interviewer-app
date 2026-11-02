@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -20,9 +20,60 @@ import {
   ShieldCheck,
   ArrowLeft,
   Sparkles,
+  ExternalLink,
 } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/client';
+
+function parseAuthErrorMessage(error: unknown): {
+  message: string;
+  isConnectionError: boolean;
+} {
+  const raw =
+    error && typeof error === 'object' && 'message' in error
+      ? String((error as { message: unknown }).message)
+      : error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+          ? error
+          : 'An unexpected error occurred. Please try again.';
+
+  const isNetworkOrTimeout =
+    raw.includes('Failed to fetch') ||
+    raw.includes('fetch failed') ||
+    raw.includes('NetworkError') ||
+    raw.includes('ERR_CONNECTION_TIMED_OUT') ||
+    raw.includes('AuthRetryableFetchError') ||
+    raw.includes('signal is aborted without reason') ||
+    raw.includes('AbortError') ||
+    raw.includes('timed out');
+
+  if (isNetworkOrTimeout) {
+    return {
+      message:
+        'Unable to reach Supabase authentication server. Your Supabase project appears to be paused due to inactivity, or you may be offline.',
+      isConnectionError: true,
+    };
+  }
+
+  if (raw.includes('Invalid login credentials')) {
+    return {
+      message:
+        'Invalid email or password. Please verify your credentials and try again.',
+      isConnectionError: false,
+    };
+  }
+
+  if (raw.includes('Email not confirmed')) {
+    return {
+      message:
+        'Please confirm your email address before signing in. Check your inbox.',
+      isConnectionError: false,
+    };
+  }
+
+  return { message: raw, isConnectionError: false };
+}
 
 export function LoginForm() {
   const router = useRouter();
@@ -41,6 +92,17 @@ export function LoginForm() {
   const initialErrorMessage =
     queryError === 'auth_callback_failed'
       ? 'Authentication session expired or failed. Please try signing in again.'
+      : queryError
+        ? decodeURIComponent(queryError.replace(/\+/g, ' '))
+        : null;
+
+  const initialParsed = initialErrorMessage
+    ? parseAuthErrorMessage(initialErrorMessage)
+    : { message: null, isConnectionError: false };
+
+  const initialSuccessMessage =
+    searchParams.get('verified') === 'true'
+      ? 'Email confirmed successfully! Welcome to your dashboard.'
       : null;
 
   // Mode: "signin" or "signup"
@@ -55,15 +117,90 @@ export function LoginForm() {
   // States
   const [isLoading, setIsLoading] = useState(false);
   const [isDemoLoading, setIsDemoLoading] = useState(false);
-  const [error, setError] = useState<string | null>(initialErrorMessage);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialParsed.message);
+  const [isConnectionError, setIsConnectionError] = useState(
+    initialParsed.isConnectionError,
+  );
+  const [success, setSuccess] = useState<string | null>(initialSuccessMessage);
 
   const supabase = createClient();
+
+  // Derive Supabase project URL for dashboard quick-link
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const projectRefMatch = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/);
+  const projectRef = projectRefMatch ? projectRefMatch[1] : null;
+  const supabaseDashboardUrl = projectRef
+    ? `https://supabase.com/dashboard/project/${projectRef}`
+    : 'https://supabase.com/dashboard';
+
+  // ── Listen for Email Confirmation & Hash Fragment Tokens ─────────────────────
+  useEffect(() => {
+    // 1. Process client-side Supabase URL hash fragments (#access_token=... / #error_description=...)
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hash = window.location.hash.substring(1);
+      const hashParams = new URLSearchParams(hash);
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+      const hashError =
+        hashParams.get('error_description') || hashParams.get('error');
+
+      if (hashError) {
+        queueMicrotask(() => {
+          setError(decodeURIComponent(hashError.replace(/\+/g, ' ')));
+        });
+      } else if (accessToken && refreshToken) {
+        queueMicrotask(() => {
+          setIsLoading(true);
+        });
+        supabase.auth
+          .setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          })
+          .then(({ data, error: sessionError }) => {
+            if (!sessionError && data.session) {
+              setSuccess(
+                'Email confirmed successfully! Welcome to your workspace.',
+              );
+              window.history.replaceState(null, '', window.location.pathname);
+              setTimeout(() => {
+                router.replace(targetRedirect);
+                router.refresh();
+              }, 600);
+            } else {
+              setIsLoading(false);
+              if (sessionError) setError(sessionError.message);
+            }
+          });
+      }
+    }
+
+    // 2. Listen to active Supabase auth events (e.g. PKCE / token auto-exchange)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (
+        (event === 'SIGNED_IN' || event === 'USER_UPDATED') &&
+        session?.user
+      ) {
+        setSuccess(
+          'Email confirmed successfully! Redirecting to your dashboard...',
+        );
+        router.replace(targetRedirect);
+        router.refresh();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [router, supabase, targetRedirect]);
 
   // ── Handle Email + Password Submission ──────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setIsConnectionError(false);
     setSuccess(null);
 
     // Validation
@@ -83,26 +220,37 @@ export function LoginForm() {
 
     setIsLoading(true);
 
+    // Enterprise client timeout: prevent UI hanging for 30s on paused backend
+    const createTimeoutPromise = (ms = 7000) =>
+      new Promise<{
+        data: { user: null; session: null };
+        error: { message: string; name?: string };
+      }>((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                'Connection timed out. Supabase authentication server is not responding.',
+              ),
+            ),
+          ms,
+        ),
+      );
+
     try {
       if (mode === 'signin') {
-        const { data, error: signInError } =
-          await supabase.auth.signInWithPassword({
+        const { data, error: signInError } = await Promise.race([
+          supabase.auth.signInWithPassword({
             email: trimmedEmail,
             password,
-          });
+          }),
+          createTimeoutPromise(),
+        ]);
 
         if (signInError) {
-          if (signInError.message.includes('Invalid login credentials')) {
-            setError(
-              'Invalid email or password. Please verify your credentials and try again.',
-            );
-          } else if (signInError.message.includes('Email not confirmed')) {
-            setError(
-              'Please confirm your email address before signing in. Check your inbox.',
-            );
-          } else {
-            setError(signInError.message);
-          }
+          const parsed = parseAuthErrorMessage(signInError);
+          setError(parsed.message);
+          setIsConnectionError(parsed.isConnectionError);
           setIsLoading(false);
           return;
         }
@@ -114,23 +262,30 @@ export function LoginForm() {
       } else {
         // Sign up flow
         const origin =
-          typeof window !== 'undefined' ? window.location.origin : '';
+          typeof window !== 'undefined' && window.location.origin
+            ? window.location.origin
+            : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
         const emailRedirectTo = `${origin}/auth/callback?next=${encodeURIComponent(targetRedirect)}`;
 
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email: trimmedEmail,
-          password,
-          options: {
-            emailRedirectTo,
-            data: {
-              name: name.trim(),
-              first_name: name.trim().split(' ')[0],
+        const { data, error: signUpError } = await Promise.race([
+          supabase.auth.signUp({
+            email: trimmedEmail,
+            password,
+            options: {
+              emailRedirectTo,
+              data: {
+                name: name.trim(),
+                first_name: name.trim().split(' ')[0],
+              },
             },
-          },
-        });
+          }),
+          createTimeoutPromise(),
+        ]);
 
         if (signUpError) {
-          setError(signUpError.message);
+          const parsed = parseAuthErrorMessage(signUpError);
+          setError(parsed.message);
+          setIsConnectionError(parsed.isConnectionError);
           setIsLoading(false);
           return;
         }
@@ -151,11 +306,9 @@ export function LoginForm() {
         }
       }
     } catch (err: unknown) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'An unexpected error occurred. Please try again.',
-      );
+      const parsed = parseAuthErrorMessage(err);
+      setError(parsed.message);
+      setIsConnectionError(parsed.isConnectionError);
       setIsLoading(false);
     }
   };
@@ -163,6 +316,9 @@ export function LoginForm() {
   // ── Handle Instant Demo Access ─────────────────────────────────────────────
   const handleDemoAccess = async () => {
     setError(null);
+    setIsConnectionError(false);
+    setSuccess(null);
+    setIsDemoLoading(true);
     setSuccess(null);
     setIsDemoLoading(true);
 
@@ -239,6 +395,7 @@ export function LoginForm() {
             onClick={() => {
               setMode('signin');
               setError(null);
+              setIsConnectionError(false);
               setSuccess(null);
             }}
             className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all duration-200 ${
@@ -255,6 +412,7 @@ export function LoginForm() {
             onClick={() => {
               setMode('signup');
               setError(null);
+              setIsConnectionError(false);
               setSuccess(null);
             }}
             className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all duration-200 ${
@@ -274,11 +432,39 @@ export function LoginForm() {
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
-              className="flex items-start gap-2.5 p-3.5 mb-5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-xs sm:text-sm"
+              className="flex flex-col gap-2.5 p-3.5 mb-5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-xs sm:text-sm"
               role="alert"
             >
-              <AlertCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
-              <span className="flex-1 leading-snug">{error}</span>
+              <div className="flex items-start gap-2.5">
+                <AlertCircle
+                  size={16}
+                  className="text-red-400 shrink-0 mt-0.5"
+                />
+                <span className="flex-1 leading-snug">{error}</span>
+              </div>
+
+              {isConnectionError && (
+                <div className="mt-1 pt-2.5 border-t border-red-500/20 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+                  <a
+                    href={supabaseDashboardUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-amber-300 hover:text-amber-200 underline inline-flex items-center gap-1 font-medium"
+                  >
+                    <span>Unpause Project in Supabase</span>
+                    <ExternalLink size={12} />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={handleDemoAccess}
+                    disabled={isDemoLoading}
+                    className="px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-semibold border border-amber-500/30 transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Sparkles size={12} />
+                    <span>Continue as Demo (Bypass)</span>
+                  </button>
+                </div>
+              )}
             </motion.div>
           )}
 

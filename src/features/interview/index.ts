@@ -46,7 +46,7 @@ export type {
   InterviewStore,
 } from './store/useInterviewStore';
 
-// ── Audio Services ──
+// ── Audio Services & STT Architecture ──
 export {
   AudioServiceError,
   startRecording,
@@ -59,6 +59,10 @@ export {
   getAvailableVoices,
   updateSessionTranscript,
   getSessionTranscript,
+  WebSpeechSTTProvider,
+  AudioStreamSTTProvider,
+  HybridSTTOrchestrator,
+  STTFactory,
 } from './services/audioService';
 
 export type {
@@ -70,12 +74,23 @@ export type {
   VoiceDescriptor,
 } from './services/audioService';
 
+export type {
+  ISTTProvider,
+  STTCallbacks,
+  STTOptions,
+  STTErrorPayload,
+  STTProviderStatus,
+  CircuitBreakerState,
+} from './contracts/stt.interface';
+
 // ── Personas & Constants ──
 export {
   INTERVIEWERS,
   INTERVIEWERS_MAP,
   DEFAULT_INTERVIEWER,
   DEFAULT_INTERVIEWER_ID,
+  getInterviewerPersona,
+  buildOpeningGreeting,
 } from './constants/personas';
 
 export type { Interviewer } from './constants/personas';

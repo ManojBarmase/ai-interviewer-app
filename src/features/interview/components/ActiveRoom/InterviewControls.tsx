@@ -19,6 +19,8 @@ import {
 
 import { Button } from '@/components/ui';
 
+import { useInterviewStore } from '../../store/useInterviewStore';
+
 export interface InterviewControlsProps {
   isMicMuted: boolean;
   toggleMicMute: () => void;
@@ -32,7 +34,7 @@ export interface InterviewControlsProps {
   isListening: boolean;
   isSpeaking: boolean;
   isSubmitting?: boolean;
-  liveTranscript: string;
+  liveTranscript?: string;
   turnsCount: number;
   numQuestions: number;
   resumeText?: string | undefined;
@@ -72,12 +74,12 @@ export function InterviewControls({
 
   const isFinalQuestion = turnsCount + 1 >= numQuestions;
   const canSkip = isInSession && isListening && !isSpeaking && !isSubmitting;
+  const storeHasTranscript = useInterviewStore((s) =>
+    Boolean(s.liveTranscript.trim()),
+  );
+  const hasTranscript = storeHasTranscript || Boolean(liveTranscript?.trim());
   const canSubmit =
-    isInSession &&
-    isListening &&
-    !isSpeaking &&
-    !isSubmitting &&
-    liveTranscript.trim().length > 0;
+    isInSession && isListening && !isSpeaking && !isSubmitting && hasTranscript;
 
   return (
     <>

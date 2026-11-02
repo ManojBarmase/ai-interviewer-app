@@ -1,6 +1,9 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  /* --- Production Output Mode ------------------------------------------- */
+  output: 'standalone',
+
   /* --- Strict Mode ------------------------------------------------------ */
   reactStrictMode: true,
 
@@ -14,8 +17,8 @@ const nextConfig: NextConfig = {
   async headers() {
     const isProd = process.env.NODE_ENV === 'production';
     const scriptSrc = isProd
-      ? "script-src 'self' 'unsafe-inline'"
-      : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
+      ? "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'"
+      : "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'";
 
     const cspDirectives = [
       "default-src 'self'",
@@ -24,7 +27,8 @@ const nextConfig: NextConfig = {
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: blob: https://*.supabase.co",
       "media-src 'self' blob:",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.groq.com https://*.upstash.io",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.groq.com https://*.upstash.io https://cdn.jsdelivr.net",
+      "worker-src 'self' blob:",
       "frame-ancestors 'none'",
       "object-src 'none'",
       "base-uri 'self'",
@@ -56,7 +60,10 @@ const nextConfig: NextConfig = {
       {
         source: '/api/(.*)',
         headers: [
-          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate' },
+          {
+            key: 'Cache-Control',
+            value: 'no-store, no-cache, must-revalidate',
+          },
           { key: 'Pragma', value: 'no-cache' },
           { key: 'X-Robots-Tag', value: 'noindex' },
         ],

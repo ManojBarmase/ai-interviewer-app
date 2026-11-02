@@ -1,96 +1,48 @@
 /**
  * @file audioService.ts
- * @description Client-side audio I/O using native Web Speech APIs.
+ * @description Enterprise Audio Facade for Client-Side Audio I/O.
+ * Unifies Speech-To-Text (HybridSTTOrchestrator with Circuit Breaker auto-failover)
+ * and Speech-Synthesis (SpeechSynthesis API) with 100% backward-compatible API.
  *
  * --- API surface --------------------------------------------------------------
- *   startRecording(callbacks, options) → starts SpeechRecognition, streams
- *     interim + final transcript chunks via callbacks. Returns cleanup fn.
+ *   startRecording(callbacks, options) → starts STT session, returns cleanup fn.
  *   stopRecording()  → gracefully stops the active recognition session
  *   isRecording()    → returns whether a session is currently active
- *   speakText(text, options) → speaks text via SpeechSynthesis, returns
- *     a Promise that resolves on utterance end or rejects on cancel/error
- *   stopSpeaking()   → cancels the active utterance; rejects the Promise
+ *   speakText(text, options) → speaks text via SpeechSynthesis
+ *   stopSpeaking()   → cancels the active utterance
  *   isSpeaking()     → returns SpeechSynthesis speaking state
  *   getAudioCapabilities() → SSR-safe capability introspection
  *   getAvailableVoices()   → returns the voice catalogue
+ *   updateSessionTranscript(text) → synchronises manual edits with speech appends
+ *   getSessionTranscript() → returns current accumulated transcript
  *
- * --- Design decisions ---------------------------------------------------------
- * • Pure module-level functions, no classes — simple and tree-shakeable.
- * • Single active session enforced via module-scoped state vars.
- * • Typed AudioServiceError — no raw DOMException string matching.
- * • No React / No Zustand — framework-agnostic per services/index.ts rules.
- * • All browser API access is guarded at call-time, not import-time.
- *   Accessing window.SpeechRecognition at module scope throws during SSR.
- *
- * --- Browser support ----------------------------------------------------------
- * SpeechRecognition: Chrome 25+, Edge 79+, Safari 14.1+ (NOT Firefox)
- * SpeechSynthesis:   Chrome 33+, Edge 14+, Firefox 49+, Safari 7+
- *
- * --- tsconfig -----------------------------------------------------------------
- * lib: ["dom", "dom.iterable", "esnext"] — all Web Speech types included.
+ * --- Architecture -------------------------------------------------------------
+ * Clean Domain Provider Pattern:
+ * audioService (Facade) -> HybridSTTOrchestrator (Circuit Breaker)
+ *   ├── WebSpeechSTTProvider (Primary: Zero-drop interim + Watchdog)
+ *   └── AudioStreamSTTProvider (Secondary: 16kHz PCM ring buffer + VAD)
  */
 
-// -- Ambient Web Speech API types --------------------------------------------
-// TypeScript's lib.dom.d.ts does not include SpeechRecognition interfaces in
-// all versions. We declare the minimal shape we need as ambient types so this
-// file compiles without requiring a third-party @types package.
+import {
+  type STTCallbacks,
+  type STTOptions,
+  type STTErrorPayload,
+} from '../contracts/stt.interface';
 
-interface SpeechRecognitionAlternativeAmbient {
-  readonly transcript: string;
-  readonly confidence: number;
-}
+import { AudioStreamSTTProvider } from './stt/AudioStreamSTTProvider';
+import { HybridSTTOrchestrator } from './stt/HybridSTTOrchestrator';
+import { SileroVADProvider } from './stt/SileroVADProvider';
+import { STTFactory } from './stt/STTFactory';
+import { WebSpeechSTTProvider } from './stt/WebSpeechSTTProvider';
 
-interface SpeechRecognitionResultAmbient {
-  readonly isFinal: boolean;
-  readonly length: number;
-  item(index: number): SpeechRecognitionAlternativeAmbient;
-  [index: number]: SpeechRecognitionAlternativeAmbient;
-}
-
-interface SpeechRecognitionResultListAmbient {
-  readonly length: number;
-  item(index: number): SpeechRecognitionResultAmbient;
-  [index: number]: SpeechRecognitionResultAmbient;
-}
-
-interface SpeechRecognitionEventAmbient extends Event {
-  readonly resultIndex: number;
-  readonly results: SpeechRecognitionResultListAmbient;
-}
-
-type SpeechRecognitionErrorCode =
-  | 'aborted'
-  | 'audio-capture'
-  | 'bad-grammar'
-  | 'language-not-supported'
-  | 'network'
-  | 'no-speech'
-  | 'not-allowed'
-  | 'permission-denied'
-  | 'service-not-allowed';
-
-interface SpeechRecognitionErrorEventAmbient extends Event {
-  readonly error: SpeechRecognitionErrorCode | string;
-  readonly message: string;
-}
-
-interface SpeechRecognitionAmbient extends EventTarget {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  maxAlternatives: number;
-  onresult: ((event: SpeechRecognitionEventAmbient) => void) | null;
-  onerror: ((event: SpeechRecognitionErrorEventAmbient) => void) | null;
-  onend: (() => void) | null;
-  onstart: (() => void) | null;
-  start(): void;
-  stop(): void;
-  abort(): void;
-}
-
-interface SpeechRecognitionStaticAmbient {
-  new (): SpeechRecognitionAmbient;
-}
+// Re-export providers & factory for modular consumption
+export {
+  WebSpeechSTTProvider,
+  AudioStreamSTTProvider,
+  SileroVADProvider,
+  HybridSTTOrchestrator,
+  STTFactory,
+};
 
 // -- Error types ---------------------------------------------------------------
 
@@ -106,19 +58,26 @@ export type AudioErrorCode =
   | 'NO_SPEECH_DETECTED' // Silence — no speech within timeout
   | 'RECOGNITION_ALREADY_ACTIVE' // startRecording called while already running
   | 'RECOGNITION_UNKNOWN' // Unmapped SpeechRecognitionError
+  | 'AUDIO_STREAM_NOT_SUPPORTED'
+  | 'AUDIO_STREAM_INIT_FAILED'
+  | 'VAD_NOT_SUPPORTED'
+  | 'VAD_INIT_FAILED'
   // TTS errors
   | 'SYNTHESIS_NOT_SUPPORTED' // Browser has no SpeechSynthesis API
   | 'SYNTHESIS_CANCELLED' // Utterance cancelled by stopSpeaking()
+  | 'INTERRUPTED_BY_USER' // Utterance interrupted by candidate speech (barge-in)
   | 'SYNTHESIS_UNKNOWN'; // Unmapped synthesis error
 
 /** Typed error — always carries a `code` and a user-safe `message`. */
 export class AudioServiceError extends Error {
   readonly code: AudioErrorCode;
+  readonly recoverable: boolean;
 
-  constructor(code: AudioErrorCode, message: string) {
+  constructor(code: AudioErrorCode, message: string, recoverable = false) {
     super(message);
     this.name = 'AudioServiceError';
     this.code = code;
+    this.recoverable = recoverable;
   }
 }
 
@@ -131,6 +90,8 @@ export interface AudioCapabilities {
   speechRecognitionSupported: boolean;
   /** True if SpeechSynthesis is present. */
   speechSynthesisSupported: boolean;
+  /** True if getUserMedia and AudioContext are available for audio streaming. */
+  audioStreamSupported?: boolean;
 }
 
 /**
@@ -143,75 +104,31 @@ export function getAudioCapabilities(): AudioCapabilities {
       isBrowser: false,
       speechRecognitionSupported: false,
       speechSynthesisSupported: false,
+      audioStreamSupported: false,
     };
   }
+
+  const speechRecognitionSupported =
+    'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
+  const speechSynthesisSupported = 'speechSynthesis' in window;
+  const audioStreamSupported =
+    typeof navigator !== 'undefined' &&
+    Boolean(navigator.mediaDevices?.getUserMedia) &&
+    (Boolean(window.AudioContext) ||
+      Boolean(
+        (window as unknown as { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext,
+      ));
+
   return {
     isBrowser: true,
-    speechRecognitionSupported:
-      'SpeechRecognition' in window || 'webkitSpeechRecognition' in window,
-    speechSynthesisSupported: 'speechSynthesis' in window,
+    speechRecognitionSupported,
+    speechSynthesisSupported,
+    audioStreamSupported,
   };
 }
 
-// -- SpeechRecognition constructor shim ---------------------------------------
-// Chrome ships the API as `webkitSpeechRecognition`; we unify at runtime.
-
-type SpeechRecognitionCtor = SpeechRecognitionStaticAmbient;
-
-function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
-  if (typeof window === 'undefined') return null;
-  const w = window as typeof window & {
-    SpeechRecognition?: SpeechRecognitionCtor;
-    webkitSpeechRecognition?: SpeechRecognitionCtor;
-  };
-  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
-}
-
-// -- Module-level session state ------------------------------------------------
-// Ensures only one recognition session and one synthesis utterance can be
-// active simultaneously. Stored here so stop* functions always have a handle.
-
-let _recognition: SpeechRecognitionAmbient | null = null;
-let _synthReject: ((err: AudioServiceError) => void) | null = null;
-
-// -- Continuous Recognition & Session State -----------------------------------
-let _sessionAccumulatedTranscript = '';
-let _isSessionActive = false;
-let _isExplicitlyStopped = false;
-let _restartTimer: ReturnType<typeof setTimeout> | null = null;
-let _silenceTimer: ReturnType<typeof setTimeout> | null = null;
-let _activeCallbacks: RecordingCallbacks | null = null;
-let _activeOptions: RecordingOptions | null = null;
-let _clearActiveSegmentFinal: (() => void) | null = null;
-
-/**
- * Updates the base accumulated transcript buffer for the active recording session.
- * Call this when the candidate manually types or edits the answer in the textarea,
- * ensuring subsequent speech seamlessly appends after their manual edits without conflict.
- */
-export function updateSessionTranscript(text: string): void {
-  _sessionAccumulatedTranscript = text;
-  if (_clearActiveSegmentFinal !== null) {
-    _clearActiveSegmentFinal();
-  }
-}
-
-/**
- * Returns the current accumulated transcript buffer.
- */
-export function getSessionTranscript(): string {
-  return _sessionAccumulatedTranscript;
-}
-
-function notifySessionEnd(): void {
-  if (_activeCallbacks !== null) {
-    const cb = _activeCallbacks;
-    _activeCallbacks = null;
-    cb.onEnd();
-  }
-}
-
-// -- STT types -----------------------------------------------------------------
+// -- STT Callback & Options contracts (Backward-Compatible) --------------------
 
 export interface RecordingCallbacks {
   /**
@@ -227,429 +144,415 @@ export interface RecordingCallbacks {
   onFinalTranscript: (text: string, confidence: number) => void;
 
   /**
-   * Fired on any recognition error. The session is already terminated when
-   * this fires — do NOT call stopRecording() from this callback.
+   * Fired on any recognition error.
    */
   onError: (error: AudioServiceError) => void;
 
   /**
-   * Fired when the session fully ends (success or error).
-   * Note: With manual submission, this is only called when stopRecording() is invoked.
+   * Fired when the session fully ends.
    */
   onEnd: () => void;
+
+  /**
+   * Optional provider failover notification callback.
+   */
+  onProviderChange?: ((providerName: string) => void) | undefined;
 }
 
 export interface RecordingOptions {
   /**
    * BCP 47 language tag (e.g. "en-US", "hi-IN").
-   * Defaults to the browser's UI language if omitted.
    */
-  language?: string;
+  language?: string | undefined;
 
   /**
-   * Optional silence timeout in ms.
-   * Default: 0 (disabled). Silence will NOT stop recording or submit answers.
+   * Optional silence timeout in ms. Default: 0 (disabled).
    */
-  silenceTimeoutMs?: number;
+  silenceTimeoutMs?: number | undefined;
 
   /**
-   * Keep recording across multiple speech bursts (dictation/interview mode).
-   * Default: true — seamlessly keeps listening across 1-2s pauses without data loss.
+   * Keep recording across multiple speech bursts. Default: true.
    */
-  continuous?: boolean;
+  continuous?: boolean | undefined;
+
+  /**
+   * Optional shared MediaStream (e.g. from webcam) to eliminate Windows WASAPI contention.
+   */
+  existingStream?: MediaStream | undefined;
 }
 
-// -- startRecording ------------------------------------------------------------
+// -- STT Session State & Orchestrator Facade -----------------------------------
+
+let _orchestrator: HybridSTTOrchestrator | null = null;
+let _activeVADProvider: SileroVADProvider | null = null;
+let _sessionAccumulatedTranscript = '';
 
 /**
- * Starts a continuous SpeechRecognition session and wires up all event handlers.
- *
- * @returns A cleanup function. Call it (or `stopRecording()`) to end the session.
- *
- * @throws {AudioServiceError} RECOGNITION_NOT_SUPPORTED — browser lacks the API.
- * @throws {AudioServiceError} RECOGNITION_ALREADY_ACTIVE — session already running.
+ * Registers active SileroVADProvider instance with audioService.
+ */
+export function registerActiveVADProvider(
+  provider: SileroVADProvider | null,
+): void {
+  _activeVADProvider = provider;
+}
+
+/**
+ * Returns current accumulated session transcript buffer.
+ */
+export function getSessionTranscript(): string {
+  if (_activeVADProvider) {
+    return _activeVADProvider.getSessionTranscript();
+  }
+  if (_orchestrator) {
+    return _orchestrator.getSessionTranscript();
+  }
+  return _sessionAccumulatedTranscript;
+}
+
+/**
+ * Updates base accumulated transcript buffer.
+ * Keeps manual candidate edits in sync so subsequent speech cleanly appends.
+ */
+export function updateSessionTranscript(text: string): void {
+  _sessionAccumulatedTranscript = text;
+  if (_orchestrator) {
+    _orchestrator.updateSessionTranscript(text);
+  }
+  if (_activeVADProvider) {
+    _activeVADProvider.updateSessionTranscript(text);
+  }
+}
+
+/**
+ * Returns true if speech recognition is currently active.
+ */
+export function isRecording(): boolean {
+  return _orchestrator !== null && _orchestrator.isListening();
+}
+
+/**
+ * Starts speech recognition session via HybridSTTOrchestrator.
+ * Returns a cleanup function that stops recording when called.
  */
 export function startRecording(
   callbacks: RecordingCallbacks,
   options: RecordingOptions = {},
 ): () => void {
-  // -- Support check ---------------------------------------------------------
-  const Ctor = getSpeechRecognitionCtor();
-  if (!Ctor) {
+  const caps = getAudioCapabilities();
+  if (!caps.speechRecognitionSupported) {
     throw new AudioServiceError(
       'RECOGNITION_NOT_SUPPORTED',
-      'SpeechRecognition is not supported in this browser. ' +
-        'Please use Chrome, Edge, or Safari 14.1+.',
+      'SpeechRecognition is not supported in this browser. Please use Chrome, Edge, or Safari 14.1+.',
     );
   }
-  const RecognitionClass = Ctor;
 
-  if (_isSessionActive && !_isExplicitlyStopped) {
+  if (isRecording()) {
     throw new AudioServiceError(
       'RECOGNITION_ALREADY_ACTIVE',
       'A recognition session is already active. Call stopRecording() first.',
     );
   }
 
-  // Clear previous timers if any lingering
-  if (_restartTimer !== null) {
-    clearTimeout(_restartTimer);
-    _restartTimer = null;
-  }
-  if (_silenceTimer !== null) {
-    clearTimeout(_silenceTimer);
-    _silenceTimer = null;
-  }
-
-  // Initialize session state
-  _isSessionActive = true;
-  _isExplicitlyStopped = false;
-  _sessionAccumulatedTranscript = '';
-  _activeCallbacks = callbacks;
-  _activeOptions = options;
-
-  let _networkRetryCount = 0;
-
-  function createAndStartRecognition(): SpeechRecognitionAmbient {
-    const rec = new RecognitionClass();
-    if (_activeOptions?.language !== undefined) {
-      rec.lang = _activeOptions.language;
-    }
-    rec.continuous = _activeOptions?.continuous ?? true;
-    rec.interimResults = true;
-    rec.maxAlternatives = 1;
-
-    _recognition = rec;
-
-    // -- Silence timer setup (only if silenceTimeoutMs is explicitly set > 0) ---
-    const timeout = _activeOptions?.silenceTimeoutMs ?? 0;
-    const resetSilenceTimer = () => {
-      if (timeout <= 0) return;
-      if (_silenceTimer !== null) clearTimeout(_silenceTimer);
-      _silenceTimer = setTimeout(() => {
-        if (_recognition === rec) {
-          _isExplicitlyStopped = true;
-          rec.stop();
-        }
-      }, timeout);
-    };
-
-    if (timeout > 0) {
-      resetSilenceTimer();
-    }
-
-    // Segment-level transcript buffers:
-    let segmentFinal = '';
-    let segmentConfidence = 0.9;
-    _clearActiveSegmentFinal = () => {
-      segmentFinal = '';
-    };
-
-    // -- Event: results -------------------------------------------------------
-    rec.onresult = (event: SpeechRecognitionEventAmbient) => {
-      _networkRetryCount = 0;
-      resetSilenceTimer();
-
-      let currentSegmentFinal = '';
-      let currentSegmentInterim = '';
-      let hasFinalInEvent = false;
-
-      for (let i = 0; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result === undefined) continue;
-        const alt = result[0];
-        if (alt === undefined) continue;
-
-        if (result.isFinal) {
-          currentSegmentFinal =
-            (currentSegmentFinal ? `${currentSegmentFinal} ` : '') +
-            alt.transcript.trim();
-          segmentConfidence = Math.min(1, Math.max(0, alt.confidence || 0.9));
-          hasFinalInEvent = true;
-        } else {
-          currentSegmentInterim =
-            (currentSegmentInterim ? `${currentSegmentInterim} ` : '') +
-            alt.transcript.trim();
-        }
-      }
-
-      segmentFinal = currentSegmentFinal;
-
-      const basePrefix = _sessionAccumulatedTranscript
-        ? `${_sessionAccumulatedTranscript.trimEnd()} `
-        : '';
-
-      const activeSegmentSpeech = [segmentFinal, currentSegmentInterim]
-        .filter(Boolean)
-        .join(' ')
-        .trim();
-      const liveFullText = (basePrefix + activeSegmentSpeech).trim();
-
-      if (liveFullText) {
-        _activeCallbacks?.onInterimTranscript(liveFullText);
-      }
-
-      if (hasFinalInEvent && segmentFinal) {
-        const finalizedFullText = (basePrefix + segmentFinal).trim();
-        _activeCallbacks?.onFinalTranscript(
-          finalizedFullText,
-          segmentConfidence,
-        );
-      }
-    };
-
-    // -- Event: error ---------------------------------------------------------
-    rec.onerror = (event: SpeechRecognitionErrorEventAmbient) => {
-      if (_silenceTimer !== null) {
-        clearTimeout(_silenceTimer);
-        _silenceTimer = null;
-      }
-
-      const codeMap: Record<string, AudioErrorCode> = {
-        'not-allowed': 'NOT_ALLOWED',
-        'permission-denied': 'NOT_ALLOWED',
-        'service-not-allowed': 'NOT_ALLOWED',
-        'no-speech': 'NO_SPEECH_DETECTED',
-        aborted: 'RECOGNITION_ABORTED',
-        'audio-capture': 'AUDIO_CAPTURE_FAILED',
-        network: 'RECOGNITION_NETWORK_ERROR',
-        'bad-grammar': 'RECOGNITION_UNKNOWN',
-        'language-not-supported': 'RECOGNITION_UNKNOWN',
-      };
-
-      const code: AudioErrorCode =
-        codeMap[event.error] ?? 'RECOGNITION_UNKNOWN';
-
-      if (code === 'RECOGNITION_NETWORK_ERROR') {
-        _networkRetryCount++;
-      }
-
-      const isFatal =
-        code === 'NOT_ALLOWED' ||
-        code === 'AUDIO_CAPTURE_FAILED' ||
-        code === 'RECOGNITION_NOT_SUPPORTED';
-
-      if (isFatal) {
-        _isExplicitlyStopped = true;
-        _isSessionActive = false;
-        _recognition = null;
-      }
-
-      const messages: Partial<Record<AudioErrorCode, string>> = {
-        NOT_ALLOWED:
-          'Microphone access was denied. Allow microphone permission in your ' +
-          'browser settings and try again.',
-        NO_SPEECH_DETECTED:
-          'No speech was detected. Please speak clearly into your microphone.',
-        AUDIO_CAPTURE_FAILED:
-          'Cannot access your microphone. Check that it is connected and not ' +
-          'being used by another application.',
-        RECOGNITION_NETWORK_ERROR:
-          'A network error interrupted speech recognition. Check your connection.',
-        RECOGNITION_ABORTED: 'Speech recognition was stopped.',
-      };
-
-      const message =
-        messages[code] ?? `Speech recognition error: ${event.error}`;
-      _activeCallbacks?.onError(new AudioServiceError(code, message));
-    };
-
-    // -- Event: end -----------------------------------------------------------
-    rec.onend = () => {
-      if (_silenceTimer !== null) {
-        clearTimeout(_silenceTimer);
-        _silenceTimer = null;
-      }
-
-      // Merge finalized text from this segment into session buffer
-      if (segmentFinal) {
-        const prefix = _sessionAccumulatedTranscript
-          ? `${_sessionAccumulatedTranscript.trimEnd()} `
-          : '';
-        _sessionAccumulatedTranscript = `${prefix}${segmentFinal}`.trim();
-        segmentFinal = '';
-      }
-
-      // If user or cleanup explicitly stopped recording, or fatal error occurred:
-      if (
-        _isExplicitlyStopped ||
-        _activeOptions?.continuous === false ||
-        !_isSessionActive
-      ) {
-        _recognition = null;
-        _isSessionActive = false;
-        notifySessionEnd();
-        return;
-      }
-
-      // In continuous mode or recovering from transient error:
-      // Auto-restart recognition seamlessly to keep listening without data loss.
-      if (_restartTimer !== null) clearTimeout(_restartTimer);
-      const delay =
-        _networkRetryCount > 0
-          ? Math.min(2000, 300 * Math.pow(2, _networkRetryCount))
-          : 50;
-
-      _restartTimer = setTimeout(() => {
-        _restartTimer = null;
-        if (!_isExplicitlyStopped && _isSessionActive) {
-          try {
-            createAndStartRecognition();
-          } catch (err) {
-            console.warn(
-              '[audioService] Failed to auto-restart recognition:',
-              err,
-            );
-            _recognition = null;
-            _isSessionActive = false;
-            notifySessionEnd();
-          }
-        }
-      }, delay);
-    };
-
-    // -- Start — catch synchronous DOMException ------------------------------
+  // Clear previous orchestrator if any lingering
+  if (_orchestrator) {
     try {
-      rec.start();
-    } catch (err) {
-      _recognition = null;
-      _isSessionActive = false;
-      if (_silenceTimer !== null) {
-        clearTimeout(_silenceTimer);
-        _silenceTimer = null;
-      }
-      const msg =
-        err instanceof Error
-          ? err.message
-          : 'Failed to start speech recognition.';
-      throw new AudioServiceError('RECOGNITION_UNKNOWN', msg);
-    }
-
-    return rec;
-  }
-
-  const initialRec = createAndStartRecognition();
-
-  // -- Return cleanup fn -----------------------------------------------------
-  return () => {
-    _isExplicitlyStopped = true;
-    _isSessionActive = false;
-    if (_restartTimer !== null) {
-      clearTimeout(_restartTimer);
-      _restartTimer = null;
-    }
-    if (_silenceTimer !== null) {
-      clearTimeout(_silenceTimer);
-      _silenceTimer = null;
-    }
-    _sessionAccumulatedTranscript = '';
-    _clearActiveSegmentFinal = null;
-    if (_recognition === initialRec || _recognition !== null) {
-      const active = _recognition;
-      _recognition = null;
-      try {
-        active?.abort();
-      } catch {
-        // Safe to ignore abort errors on teardown
-      }
-    }
-    notifySessionEnd();
-  };
-}
-
-// -- stopRecording -------------------------------------------------------------
-
-/**
- * Gracefully stops the active recognition session (no-op if none is active).
- * Sets explicit stop flag to ensure continuous recognition does not auto-restart.
- */
-export function stopRecording(): void {
-  _isExplicitlyStopped = true;
-  _isSessionActive = false;
-
-  if (_restartTimer !== null) {
-    clearTimeout(_restartTimer);
-    _restartTimer = null;
-  }
-  if (_silenceTimer !== null) {
-    clearTimeout(_silenceTimer);
-    _silenceTimer = null;
-  }
-
-  _sessionAccumulatedTranscript = '';
-  _clearActiveSegmentFinal = null;
-
-  if (_recognition !== null) {
-    const rec = _recognition;
-    _recognition = null;
-    try {
-      rec.stop();
+      _orchestrator.stop();
     } catch {
       // Safe to ignore
     }
   }
 
-  notifySessionEnd();
+  _orchestrator = new HybridSTTOrchestrator();
+
+  const wrappedCallbacks: STTCallbacks = {
+    onInterimTranscript: (text: string) => {
+      callbacks.onInterimTranscript(text);
+    },
+    onFinalTranscript: (text: string, confidence: number) => {
+      callbacks.onFinalTranscript(text, confidence);
+    },
+    onError: (err: STTErrorPayload) => {
+      callbacks.onError(
+        new AudioServiceError(
+          err.code as AudioErrorCode,
+          err.message,
+          err.recoverable,
+        ),
+      );
+    },
+    onEnd: () => {
+      callbacks.onEnd();
+    },
+    onProviderChange: callbacks.onProviderChange,
+  };
+
+  const sttOptions: STTOptions = {
+    language: options.language,
+    continuous: options.continuous,
+    silenceTimeoutMs: options.silenceTimeoutMs,
+    existingStream: options.existingStream,
+  };
+
+  try {
+    const startResult = _orchestrator.start(wrappedCallbacks, sttOptions);
+    if (startResult instanceof Promise) {
+      startResult.catch((err: unknown) => {
+        const msg =
+          err instanceof Error ? err.message : 'Audio stream failed to start.';
+        callbacks.onError(
+          new AudioServiceError('AUDIO_STREAM_INIT_FAILED', msg),
+        );
+      });
+    }
+  } catch (err: unknown) {
+    _orchestrator = null;
+    if (err instanceof AudioServiceError) {
+      throw err;
+    }
+    const msg =
+      err instanceof Error
+        ? err.message
+        : 'Failed to start speech recognition.';
+    throw new AudioServiceError('RECOGNITION_UNKNOWN', msg);
+  }
+
+  return () => {
+    stopRecording();
+  };
 }
 
-/** Returns true if a recognition session is currently active. */
-export function isRecording(): boolean {
-  return _isSessionActive && !_isExplicitlyStopped;
+/**
+ * Gracefully stops the active speech recognition session.
+ */
+export function stopRecording(): void {
+  if (_orchestrator !== null) {
+    const orch = _orchestrator;
+    _orchestrator = null;
+    _sessionAccumulatedTranscript = '';
+    orch.stop();
+  }
 }
 
-// -- TTS types -----------------------------------------------------------------
+// -- Speech Synthesis (TTS) & Audio Analysis -----------------------------------
 
 export interface SpeakOptions {
-  /** BCP 47 language tag, e.g. "en-US". Defaults to browser UI language. */
-  language?: string;
-  /** Speaking rate (0.1–10). 1.0 = normal. Default: 1.0. */
-  rate?: number;
-  /** Pitch (0–2). 1.0 = normal. Default: 1.0. */
-  pitch?: number;
-  /** Volume (0–1). Default: 1.0. */
-  volume?: number;
-  /**
-   * Preferred voice name (matched to SpeechSynthesisVoice.name).
-   * Falls back to the browser default if not found.
-   */
-  voiceName?: string;
-  /** Called when the utterance actually begins playing (after queue delay). */
-  onStart?: () => void;
-  /**
-   * Called on each word boundary (not supported in all browsers).
-   * `charIndex` is the character offset in the original text string.
-   */
-  onBoundary?: (charIndex: number, word: string) => void;
+  language?: string | undefined;
+  rate?: number | undefined;
+  pitch?: number | undefined;
+  volume?: number | undefined;
+  voiceName?: string | undefined;
+  signal?: AbortSignal | undefined;
+  onStart?: (() => void) | undefined;
+  onBoundary?: ((charIndex: number, word: string) => void) | undefined;
 }
 
-// -- speakText -----------------------------------------------------------------
+class TTSAudioAnalyserEngine {
+  private audioCtx: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private oscillator: OscillatorNode | null = null;
+  private formantFilter: BiquadFilterNode | null = null;
+  private gainNode: GainNode | null = null;
+  private isAnalyzing = false;
+  private animFrameId: number | null = null;
+
+  getAnalyser(): AnalyserNode | null {
+    this.ensureContext();
+    return this.analyser;
+  }
+
+  getAudioContext(): AudioContext | null {
+    this.ensureContext();
+    return this.audioCtx;
+  }
+
+  private ensureContext(): void {
+    if (typeof window === 'undefined') return;
+    if (!this.audioCtx) {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext })
+          ?.webkitAudioContext;
+      if (AudioCtx) {
+        try {
+          this.audioCtx = new AudioCtx();
+          this.analyser = this.audioCtx.createAnalyser();
+          this.analyser.fftSize = 128;
+          this.analyser.smoothingTimeConstant = 0.75;
+        } catch {
+          // Gracefully handle environments without audio hardware
+        }
+      }
+    }
+  }
+
+  startSpeechAnalysis(): void {
+    this.ensureContext();
+    if (!this.audioCtx || !this.analyser) return;
+
+    if (this.audioCtx.state === 'suspended') {
+      void this.audioCtx.resume().catch(() => {});
+    }
+
+    this.stopSpeechAnalysis();
+    this.isAnalyzing = true;
+
+    try {
+      const osc = this.audioCtx.createOscillator();
+      const filter = this.audioCtx.createBiquadFilter();
+      const gain = this.audioCtx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(140, this.audioCtx.currentTime);
+
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(800, this.audioCtx.currentTime);
+      filter.Q.setValueAtTime(3, this.audioCtx.currentTime);
+
+      gain.gain.setValueAtTime(0.7, this.audioCtx.currentTime);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.analyser);
+
+      // Route through silent gain to audio destination to drive Web Audio render pump
+      const silentGain = this.audioCtx.createGain();
+      silentGain.gain.setValueAtTime(0, this.audioCtx.currentTime);
+      this.analyser.connect(silentGain);
+      silentGain.connect(this.audioCtx.destination);
+
+      osc.start();
+      this.oscillator = osc;
+      this.formantFilter = filter;
+      this.gainNode = gain;
+
+      let step = 0;
+      const modulate = () => {
+        if (
+          !this.isAnalyzing ||
+          !this.audioCtx ||
+          !this.gainNode ||
+          !this.oscillator ||
+          !this.formantFilter
+        ) {
+          return;
+        }
+        step++;
+        const now = this.audioCtx.currentTime;
+        const cadence =
+          Math.sin(step * 0.15) * 0.4 + Math.sin(step * 0.05) * 0.3;
+        const targetGain = Math.max(0.1, 0.6 + cadence * 0.3);
+        this.gainNode.gain.setValueAtTime(targetGain, now);
+
+        const formantFreq =
+          750 + Math.sin(step * 0.22) * 450 + Math.cos(step * 0.11) * 200;
+        this.formantFilter.frequency.setValueAtTime(formantFreq, now);
+
+        const pitch = 135 + Math.sin(step * 0.08) * 30;
+        this.oscillator.frequency.setValueAtTime(pitch, now);
+
+        if (
+          typeof window !== 'undefined' &&
+          'requestAnimationFrame' in window
+        ) {
+          this.animFrameId = requestAnimationFrame(modulate);
+        }
+      };
+
+      if (typeof window !== 'undefined' && 'requestAnimationFrame' in window) {
+        this.animFrameId = requestAnimationFrame(modulate);
+      }
+    } catch {
+      // Safe to ignore in test or unsupported environments
+    }
+  }
+
+  onWordBoundary(): void {
+    if (!this.gainNode || !this.audioCtx) return;
+    try {
+      const now = this.audioCtx.currentTime;
+      this.gainNode.gain.cancelScheduledValues(now);
+      this.gainNode.gain.setValueAtTime(0.9, now);
+      this.gainNode.gain.exponentialRampToValueAtTime(0.4, now + 0.12);
+    } catch {
+      // Safe to ignore
+    }
+  }
+
+  stopSpeechAnalysis(): void {
+    this.isAnalyzing = false;
+    if (
+      this.animFrameId !== null &&
+      typeof window !== 'undefined' &&
+      'cancelAnimationFrame' in window
+    ) {
+      cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = null;
+    }
+    if (this.gainNode && this.audioCtx) {
+      try {
+        this.gainNode.gain.setValueAtTime(0, this.audioCtx.currentTime);
+      } catch {
+        // Safe to ignore
+      }
+    }
+    if (this.oscillator) {
+      try {
+        this.oscillator.stop();
+        this.oscillator.disconnect();
+      } catch {
+        // Safe to ignore
+      }
+      this.oscillator = null;
+    }
+    if (this.formantFilter) {
+      try {
+        this.formantFilter.disconnect();
+      } catch {
+        // Safe to ignore
+      }
+      this.formantFilter = null;
+    }
+    if (this.gainNode) {
+      try {
+        this.gainNode.disconnect();
+      } catch {
+        // Safe to ignore
+      }
+      this.gainNode = null;
+    }
+  }
+}
+
+const _ttsAudioEngine = new TTSAudioAnalyserEngine();
+
+/**
+ * Returns Web Audio AnalyserNode connected to synthetic/TTS audio output.
+ */
+export function getTTSAnalyser(): AnalyserNode | null {
+  return _ttsAudioEngine.getAnalyser();
+}
+
+/**
+ * Returns Web Audio AudioContext powering TTS speech analysis.
+ */
+export function getTTSAudioContext(): AudioContext | null {
+  return _ttsAudioEngine.getAudioContext();
+}
+
+let _synthReject: ((err: AudioServiceError) => void) | null = null;
+let _speakAbortController: AbortController | null = null;
+let _isBargeInInterrupted = false;
 
 /**
  * Speaks `text` using SpeechSynthesis.
- *
- * Always interrupts any currently playing utterance — in the interview flow,
- * new text always takes priority over queued text.
- *
- * @returns Promise<void> — resolves when the utterance finishes naturally,
- *   rejects with AudioServiceError on cancellation or synthesis failure.
- *
- * @example
- * ```ts
- * try {
- *   await speakText("Tell me about a challenging project.", { language: "en-US", rate: 0.9 });
- *   store.transitionTo(InterviewPhase.LISTENING);
- * } catch (err) {
- *   if (err instanceof AudioServiceError && err.code === "SYNTHESIS_CANCELLED") return;
- *   store.setError({ code: "TTS_FAILED", message: "AI speech failed.", retryable: true });
- * }
- * ```
+ * Holds an AbortController for clean user barge-in cancellation.
+ * Always interrupts any currently playing utterance.
  */
 export function speakText(
   text: string,
   options: SpeakOptions = {},
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    // -- Support check --------------------------------------------------------
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       reject(
         new AudioServiceError(
@@ -660,25 +563,42 @@ export function speakText(
       return;
     }
 
-    // -- Cancel any in-flight utterance ---------------------------------------
     if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
-      // Reject the previous speakText() Promise before cancelling.
       const prevReject = _synthReject;
       _synthReject = null;
+      if (_speakAbortController) {
+        _speakAbortController.abort('SYNTHESIS_CANCELLED');
+        _speakAbortController = null;
+      }
       window.speechSynthesis.cancel();
       prevReject?.(
         new AudioServiceError(
           'SYNTHESIS_CANCELLED',
           'Utterance was interrupted by a new speakText() call.',
+          true,
         ),
       );
     }
 
-    _synthReject = reject;
+    _isBargeInInterrupted = false;
+    const ac = new AbortController();
+    _speakAbortController = ac;
 
+    if (options.signal) {
+      if (options.signal.aborted) {
+        const isBargeIn = options.signal.reason === 'INTERRUPTED_BY_USER';
+        stopSpeaking(isBargeIn ? 'INTERRUPTED_BY_USER' : 'SYNTHESIS_CANCELLED');
+        return;
+      }
+      options.signal.addEventListener('abort', () => {
+        const isBargeIn = options.signal?.reason === 'INTERRUPTED_BY_USER';
+        stopSpeaking(isBargeIn ? 'INTERRUPTED_BY_USER' : 'SYNTHESIS_CANCELLED');
+      });
+    }
+
+    _synthReject = reject;
     const utterance = new SpeechSynthesisUtterance(text);
 
-    // -- Apply options --------------------------------------------------------
     if (options.language !== undefined) utterance.lang = options.language;
     if (options.rate !== undefined) utterance.rate = options.rate;
     if (options.pitch !== undefined) utterance.pitch = options.pitch;
@@ -689,15 +609,15 @@ export function speakText(
         .getVoices()
         .find((v) => v.name === options.voiceName);
       if (voice !== undefined) utterance.voice = voice;
-      // Falls back to browser default if not found — does not throw.
     }
 
-    // -- Events ---------------------------------------------------------------
     utterance.onstart = () => {
+      _ttsAudioEngine.startSpeechAnalysis();
       options.onStart?.();
     };
 
     utterance.onboundary = (ev: SpeechSynthesisEvent) => {
+      _ttsAudioEngine.onWordBoundary();
       if (ev.name === 'word' && options.onBoundary !== undefined) {
         const word = text.slice(ev.charIndex, ev.charIndex + ev.charLength);
         options.onBoundary(ev.charIndex, word);
@@ -705,21 +625,41 @@ export function speakText(
     };
 
     utterance.onend = () => {
+      _ttsAudioEngine.stopSpeechAnalysis();
       _synthReject = null;
+      _speakAbortController = null;
       resolve();
     };
 
     utterance.onerror = (ev: SpeechSynthesisErrorEvent) => {
+      _ttsAudioEngine.stopSpeechAnalysis();
+      const currentReject = _synthReject;
       _synthReject = null;
-      if (ev.error === 'canceled' || ev.error === 'interrupted') {
-        reject(
+      _speakAbortController = null;
+
+      const isInterrupted =
+        _isBargeInInterrupted ||
+        (ac.signal.aborted && ac.signal.reason === 'INTERRUPTED_BY_USER');
+
+      if (isInterrupted) {
+        _isBargeInInterrupted = false;
+        currentReject?.(
+          new AudioServiceError(
+            'INTERRUPTED_BY_USER',
+            'Speech synthesis was interrupted by candidate speech (barge-in).',
+            true,
+          ),
+        );
+      } else if (ev.error === 'canceled' || ev.error === 'interrupted') {
+        currentReject?.(
           new AudioServiceError(
             'SYNTHESIS_CANCELLED',
             'Speech synthesis was cancelled.',
+            true,
           ),
         );
       } else {
-        reject(
+        currentReject?.(
           new AudioServiceError(
             'SYNTHESIS_UNKNOWN',
             `Speech synthesis error: ${ev.error}`,
@@ -728,9 +668,7 @@ export function speakText(
       }
     };
 
-    // -- Chrome voice-loading workaround --------------------------------------
-    // Chrome's getVoices() returns [] until the `voiceschanged` event fires.
-    // If we haven't matched a voice yet, retry once after the event.
+    // Chrome voice-loading workaround
     if (
       options.voiceName !== undefined &&
       utterance.voice === null &&
@@ -753,33 +691,48 @@ export function speakText(
   });
 }
 
-// -- stopSpeaking --------------------------------------------------------------
-
 /**
- * Cancels the currently active SpeechSynthesis utterance.
- * The Promise returned by `speakText()` will reject with SYNTHESIS_CANCELLED.
- * No-op if nothing is speaking.
+ * Cancels the currently active SpeechSynthesis utterance cleanly.
+ * Accepts optional reason ('INTERRUPTED_BY_USER' on barge-in vs default 'SYNTHESIS_CANCELLED').
  */
-export function stopSpeaking(): void {
-  if (typeof window === 'undefined' || !window.speechSynthesis) return;
-  if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending)
-    return;
+export function stopSpeaking(
+  reason: 'INTERRUPTED_BY_USER' | 'SYNTHESIS_CANCELLED' = 'SYNTHESIS_CANCELLED',
+): void {
+  _ttsAudioEngine.stopSpeechAnalysis();
 
-  // Settle the Promise first so the rejection arrives before onerror fires.
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
+    return;
+  }
+
+  if (reason === 'INTERRUPTED_BY_USER') {
+    _isBargeInInterrupted = true;
+  }
+
+  if (_speakAbortController) {
+    _speakAbortController.abort(reason);
+    _speakAbortController = null;
+  }
+
   const reject = _synthReject;
   _synthReject = null;
-
   window.speechSynthesis.cancel();
 
-  reject?.(
-    new AudioServiceError(
-      'SYNTHESIS_CANCELLED',
-      'Speech synthesis was stopped by the application.',
-    ),
-  );
+  const code: AudioErrorCode =
+    reason === 'INTERRUPTED_BY_USER'
+      ? 'INTERRUPTED_BY_USER'
+      : 'SYNTHESIS_CANCELLED';
+  const msg =
+    reason === 'INTERRUPTED_BY_USER'
+      ? 'Speech synthesis was interrupted by candidate speech (barge-in).'
+      : 'Speech synthesis was stopped by the application.';
+
+  reject?.(new AudioServiceError(code, msg, true));
 }
 
-/** Returns true if SpeechSynthesis is currently producing audio. */
+/**
+ * Returns true if SpeechSynthesis is currently producing audio.
+ */
 export function isSpeaking(): boolean {
   if (typeof window === 'undefined' || !window.speechSynthesis) return false;
   return window.speechSynthesis.speaking;
@@ -796,12 +749,11 @@ export interface VoiceDescriptor {
 
 /**
  * Returns all available synthesis voices.
- * Call after `voiceschanged` has fired (or on a user gesture) in Chrome.
- * Returns [] during SSR or if SpeechSynthesis is unavailable.
  */
 export function getAvailableVoices(): VoiceDescriptor[] {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window))
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
     return [];
+  }
   return window.speechSynthesis.getVoices().map((v) => ({
     name: v.name,
     language: v.lang,

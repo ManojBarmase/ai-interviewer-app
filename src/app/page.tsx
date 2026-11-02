@@ -1,9 +1,6 @@
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
-import { createServerClient } from '@supabase/ssr';
-
-import { DEMO_SESSION_COOKIE } from '@/lib/constants';
+import { getCurrentUser } from '@/lib/auth/get-current-user';
 
 /**
  * Enterprise Entry Point (Root /)
@@ -15,27 +12,39 @@ import { DEMO_SESSION_COOKIE } from '@/lib/constants';
  * The actual mock interview chamber is securely isolated at /interview
  * and requires role configuration via /dashboard/setup.
  */
-export default async function HomePage() {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-      },
-    },
-  );
+interface HomePageProps {
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
+}
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export default async function HomePage({ searchParams }: HomePageProps = {}) {
+  const params = searchParams ? await searchParams : {};
+  const code = typeof params.code === 'string' ? params.code : undefined;
+  const token_hash =
+    typeof params.token_hash === 'string' ? params.token_hash : undefined;
+  const type = typeof params.type === 'string' ? params.type : undefined;
+  const error = typeof params.error === 'string' ? params.error : undefined;
+  const error_description =
+    typeof params.error_description === 'string'
+      ? params.error_description
+      : undefined;
 
-  const isDemoSession = cookieStore.get(DEMO_SESSION_COOKIE)?.value === 'true';
+  // If Supabase redirected to Site URL (root /) with auth callback parameters,
+  // forward immediately to /auth/callback so the session is securely established.
+  if (code || token_hash || error) {
+    const callbackParams = new URLSearchParams();
+    if (code) callbackParams.set('code', code);
+    if (token_hash) callbackParams.set('token_hash', token_hash);
+    if (type) callbackParams.set('type', type);
+    if (error) callbackParams.set('error', error);
+    if (error_description) {
+      callbackParams.set('error_description', error_description);
+    }
+    callbackParams.set('next', '/dashboard');
+    redirect(`/auth/callback?${callbackParams.toString()}`);
+  }
 
-  if (user || isDemoSession) {
+  const user = await getCurrentUser();
+  if (user) {
     redirect('/dashboard');
   } else {
     redirect('/login');

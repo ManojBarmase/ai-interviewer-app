@@ -63,10 +63,26 @@ export function DashboardSidebar() {
   useEffect(() => {
     async function loadUser() {
       try {
+        if (
+          typeof document !== 'undefined' &&
+          document.cookie.includes(`${DEMO_SESSION_COOKIE}=true`)
+        ) {
+          setUserProfile({ name: 'Demo Candidate', plan: 'Demo Sandbox' });
+          return;
+        }
+
         const supabase = createClient();
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+        const authTimeout = new Promise<{ data: { user: null }; error: Error }>(
+          (_, reject) =>
+            setTimeout(() => reject(new Error('Auth lookup timeout')), 2000),
+        );
+
+        const result = await Promise.race([
+          supabase.auth.getUser(),
+          authTimeout,
+        ]);
+        const user = result.data.user;
+
         if (user) {
           const displayName =
             user.user_metadata?.name ||
@@ -74,11 +90,6 @@ export function DashboardSidebar() {
             user.email?.split('@')[0] ||
             'Candidate';
           setUserProfile({ name: displayName, plan: 'Pro Tier' });
-        } else if (
-          typeof document !== 'undefined' &&
-          document.cookie.includes(`${DEMO_SESSION_COOKIE}=true`)
-        ) {
-          setUserProfile({ name: 'Demo Candidate', plan: 'Demo Sandbox' });
         }
       } catch {
         // Fallback to default
@@ -90,8 +101,17 @@ export function DashboardSidebar() {
   const handleSignOut = async () => {
     try {
       await fetch('/api/auth/demo', { method: 'DELETE' }).catch(() => {});
-      const supabase = createClient();
-      await supabase.auth.signOut();
+      try {
+        const supabase = createClient();
+        await Promise.race([
+          supabase.auth.signOut(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Signout timeout')), 1500),
+          ),
+        ]);
+      } catch {
+        // Ignore signout timeout
+      }
       router.push('/login');
       router.refresh();
     } catch (e) {

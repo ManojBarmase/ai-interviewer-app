@@ -30,6 +30,8 @@ import {
   Trophy,
   Zap,
   ArrowRight,
+  CheckCircle2,
+  X,
 } from 'lucide-react';
 
 import type { HeatmapDay } from '@/server/services/analytics.service';
@@ -795,6 +797,7 @@ export interface DashboardClientProps {
   recentSessions?: SessionRow[];
   heatmapData?: HeatmapDay[][] | number[][];
   weeklyGoal?: { current: number; target: number };
+  isVerifiedNotice?: boolean | undefined;
 }
 
 export function DashboardClient({
@@ -806,8 +809,12 @@ export function DashboardClient({
   recentSessions,
   heatmapData: initialHeatmapData,
   weeklyGoal,
+  isVerifiedNotice,
 }: DashboardClientProps) {
   const router = useRouter();
+  const [showVerifiedBanner, setShowVerifiedBanner] = useState(
+    Boolean(isVerifiedNotice),
+  );
   const heatmapData = initialHeatmapData || createEmptyHeatmapData();
 
   // Use dynamic data instead of MOCK_DATA
@@ -828,6 +835,32 @@ export function DashboardClient({
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1200px] mx-auto space-y-6">
+      {/* ═══ EMAIL VERIFICATION SUCCESS BANNER ═════════════════════════════ */}
+      {showVerifiedBanner && (
+        <div
+          role="status"
+          className="flex items-center justify-between p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-sm shadow-lg shadow-emerald-500/5 animate-in fade-in slide-in-from-top-2 duration-300"
+        >
+          <div className="flex items-center gap-3">
+            <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+            <span>
+              <strong className="font-semibold text-emerald-300">
+                Email confirmed successfully!
+              </strong>{' '}
+              Welcome to your AI Mock Interviewer workspace.
+            </span>
+          </div>
+          <button
+            onClick={() => setShowVerifiedBanner(false)}
+            type="button"
+            className="text-emerald-400/60 hover:text-emerald-300 p-1 rounded-lg hover:bg-emerald-500/10 transition-colors cursor-pointer"
+            title="Dismiss notification"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* ═══ HERO BANNER ═══════════════════════════════════════════════════ */}
       <section className="relative overflow-hidden rounded-2xl bg-linear-to-br from-[hsl(222,24%,13%)] to-[hsl(222,28%,10%)] border border-white/5 p-6 sm:p-8 lg:p-10">
         <div className="flex flex-col lg:flex-row items-start lg:items-center gap-6 lg:gap-12">

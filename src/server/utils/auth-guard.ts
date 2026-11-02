@@ -94,9 +94,17 @@ export async function getAuthenticatedUser(
   let authUser = null;
   if (supabase) {
     try {
-      const { data, error } = await supabase.auth.getUser();
-      if (!error && data?.user) {
-        authUser = data.user;
+      const authTimeout = new Promise<{
+        data: { user: null };
+        error: Error;
+      }>((_, reject) =>
+        setTimeout(() => reject(new Error('Supabase Auth timeout')), 2500),
+      );
+
+      const result = await Promise.race([supabase.auth.getUser(), authTimeout]);
+
+      if (!result.error && result.data?.user) {
+        authUser = result.data.user;
       }
     } catch {
       authUser = null;

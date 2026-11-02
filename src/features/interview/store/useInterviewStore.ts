@@ -134,11 +134,15 @@ export interface InterviewSession {
 export interface CandidateContext {
   role: string;
   experience: string;
+  difficulty?: string | undefined;
+  interviewType?: string | undefined;
   techStack: string[];
-  resumeText?: string;
-  interviewerId?: string;
-  numQuestions?: number;
-  interviewType?: string;
+  resumeText?: string | undefined;
+  jobDescription?: string | undefined;
+  interviewerId?: string | undefined;
+  numQuestions?: number | undefined;
+  timeLimit?: string | undefined;
+  allowFollowUps?: boolean | undefined;
 }
 
 /** Structured error payload — never a raw Error object (not serialisable). */
@@ -272,11 +276,23 @@ export type InterviewStore = InterviewState & InterviewActions;
 
 // -- Initial state -------------------------------------------------------------
 
+const CANDIDATE_STORAGE_KEY = 'ai_interviewer_candidate_context';
+
+function getStoredCandidateContext(): CandidateContext | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage?.getItem(CANDIDATE_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as CandidateContext) : null;
+  } catch {
+    return null;
+  }
+}
+
 const INITIAL_STATE: InterviewState = {
   phase: InterviewPhase.IDLE,
   previousPhase: null,
   session: null,
-  candidateContext: null,
+  candidateContext: getStoredCandidateContext(),
   currentTurnIndex: 0,
   currentQuestion: null,
   turns: [],
@@ -296,6 +312,11 @@ export const useInterviewStore = create<InterviewStore>()(
       // -- transitionTo -----------------------------------------------------
       transitionTo(nextPhase) {
         const { phase } = get();
+
+        // Enterprise state machine guarantee: self-transitions (e.g. IDLE -> IDLE) are idempotent no-ops
+        if (phase === nextPhase) {
+          return true;
+        }
 
         if (!isValidTransition(phase, nextPhase)) {
           if (process.env.NODE_ENV === 'development') {
@@ -490,11 +511,26 @@ export const useInterviewStore = create<InterviewStore>()(
 
       // -- reset -------------------------------------------------------------
       reset() {
-        set(() => INITIAL_STATE, false, { type: 'interview/reset' });
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          try {
+            window.sessionStorage.removeItem(CANDIDATE_STORAGE_KEY);
+          } catch {}
+        }
+        set(() => ({ ...INITIAL_STATE, candidateContext: null }), false, {
+          type: 'interview/reset',
+        });
       },
 
       // -- setCandidateContext -----------------------------------------------
       setCandidateContext(context) {
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          try {
+            window.sessionStorage.setItem(
+              CANDIDATE_STORAGE_KEY,
+              JSON.stringify(context),
+            );
+          } catch {}
+        }
         set(() => ({ candidateContext: context }), false, {
           type: 'interview/setCandidateContext',
         });

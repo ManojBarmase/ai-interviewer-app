@@ -60,8 +60,8 @@ const LOGIN_PATH = '/login';
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
-  // Health check endpoint requires no auth and should bypass proxy logic immediately
-  if (pathname === '/api/health') {
+  // Health check endpoints require no auth and should bypass proxy logic immediately
+  if (pathname.startsWith('/api/health')) {
     return NextResponse.next();
   }
 
@@ -120,18 +120,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     },
   });
 
-  // -- 3. Refresh the session. ------------------------------------------------
-  // IMPORTANT: Always call getUser() (not getSession()) in the proxy.
-  // getUser() re-validates the JWT against the Supabase Auth server — it cannot
-  // be spoofed by a tampered cookie. getSession() trusts the cookie blindly.
-  //
-  // Call this BEFORE any response is generated so token refreshes can be
-  // written to cookies. If a token refresh completes after the response is
-  // committed, the updated session is lost and the next request re-refreshes.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  // -- 3. Authenticate session (Demo Fast-Path & Resilient Supabase Guard) -----
   const demoCookie = request.cookies.get(DEMO_SESSION_COOKIE)?.value;
   const demoCreatedAt = request.cookies.get(
     DEMO_SESSION_CREATED_AT_COOKIE,
@@ -158,6 +147,40 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
       response.cookies.delete(DEMO_SESSION_COOKIE);
       response.cookies.delete(DEMO_SESSION_CREATED_AT_COOKIE);
       response.cookies.delete(DEMO_SESSION_SIGNATURE_COOKIE);
+    }
+  }
+
+  let user = null;
+  // If user is already authenticated via demo session, bypass remote Supabase network call
+  if (!isDemoSession) {
+    const allCookies = request.cookies.getAll();
+    const hasSupabaseCookie = allCookies.some(
+      (c) =>
+        (c.name.startsWith('sb-') && c.name.includes('-auth-token')) ||
+        c.name === 'sb-access-token',
+    );
+
+    // Only query Supabase auth server if Supabase auth cookies are actually present
+    if (hasSupabaseCookie && supabaseUrl && supabaseAnonKey) {
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error('Supabase Auth request timed out')),
+            2500,
+          ),
+        );
+        const userResult = await Promise.race([
+          supabase.auth.getUser(),
+          timeoutPromise,
+        ]);
+        user = userResult.data.user;
+      } catch (authErr) {
+        console.warn(
+          '[proxy] Supabase Auth connection failed or timed out:',
+          authErr instanceof Error ? authErr.message : String(authErr),
+        );
+        user = null;
+      }
     }
   }
 

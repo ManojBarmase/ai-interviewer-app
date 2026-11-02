@@ -11,6 +11,10 @@ export interface InterviewTimerProps {
   isListening: boolean;
   startedAt?: string | undefined;
   onToggleLayout?: (() => void) | undefined;
+  experience?: string | undefined;
+  difficulty?: string | undefined;
+  interviewType?: string | undefined;
+  timeLimit?: string | undefined;
 }
 
 /**
@@ -23,6 +27,10 @@ export function InterviewTimer({
   isListening,
   startedAt,
   onToggleLayout,
+  experience,
+  difficulty,
+  interviewType,
+  timeLimit,
 }: InterviewTimerProps) {
   const [elapsed, setElapsed] = useState('00:00');
 
@@ -47,17 +55,43 @@ export function InterviewTimer({
 
   return (
     <header className="flex items-center justify-between px-6 py-3 border-b border-white/5 shrink-0 bg-[#0b0c10]">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5 flex-wrap">
         <div
-          className={`w-2.5 h-2.5 rounded-full ${
+          className={`w-2.5 h-2.5 rounded-full shrink-0 ${
             isListening ? 'bg-red-500 animate-pulse' : 'bg-red-500'
           }`}
         />
-        <h1 className="text-sm font-semibold text-white/90">
-          {roleName} interview
-        </h1>
-        <span className="text-xs text-white/40 ml-2">
-          Question {Math.min(currentTurn, totalQuestions)} of {totalQuestions}
+        <h1 className="text-sm font-semibold text-white/90">{roleName}</h1>
+        {experience && (
+          <span className="text-[11px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-white/70 font-medium">
+            {experience}
+          </span>
+        )}
+        {interviewType && (
+          <span className="text-[11px] px-2 py-0.5 rounded bg-brand-500/10 border border-brand-500/20 text-brand-400 font-medium">
+            {interviewType}
+          </span>
+        )}
+        {difficulty && (
+          <span
+            className={`text-[11px] px-2 py-0.5 rounded border font-medium ${
+              difficulty === 'Hard'
+                ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                : difficulty === 'Easy'
+                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                  : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+            }`}
+          >
+            {difficulty}
+          </span>
+        )}
+        {timeLimit && timeLimit !== 'None' && (
+          <span className="text-[11px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-white/50 font-mono">
+            {timeLimit} limit
+          </span>
+        )}
+        <span className="text-xs text-white/40 ml-1 font-mono">
+          Q{Math.min(currentTurn, totalQuestions)}/{totalQuestions}
         </span>
       </div>
 

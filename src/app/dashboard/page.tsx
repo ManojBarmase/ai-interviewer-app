@@ -1,15 +1,9 @@
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
-import { createServerClient } from '@supabase/ssr';
 import { Flame, Target, Trophy, Zap } from 'lucide-react';
 
 import { DashboardClient } from '@/features/dashboard';
-import {
-  DEMO_SESSION_COOKIE,
-  DEMO_USER_EMAIL,
-  DEMO_USER_ID,
-} from '@/lib/constants';
+import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { prisma, type Prisma } from '@/server/db/prisma';
 import {
   generateRealHeatmapData,
@@ -31,65 +25,11 @@ interface DimensionQuestion {
 type DashboardSession = Prisma.SessionGetPayload<{
   include: {
     scorecard: true;
-    _count: {
-      select: { transcripts: true };
+    transcripts: {
+      select: { id: true };
     };
   };
 }>;
-
-async function getAuthenticatedUser() {
-  const cookieStore = await cookies();
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
-  const supabase = createServerClient(supabaseUrl, supabaseKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll();
-      },
-    },
-  });
-
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-
-  const isDemoSession = cookieStore.get(DEMO_SESSION_COOKIE)?.value === 'true';
-
-  if (!authUser && !isDemoSession) {
-    redirect('/login?redirectTo=/dashboard');
-  }
-
-  // Handle verified Supabase auth user
-  if (authUser) {
-    const user = await prisma.user.upsert({
-      where: { id: authUser.id },
-      update: {},
-      create: {
-        id: authUser.id,
-        email: authUser.email || 'candidate@example.com',
-        name:
-          authUser.user_metadata?.name ||
-          authUser.user_metadata?.first_name ||
-          authUser.email?.split('@')[0] ||
-          'Candidate',
-        role: 'CANDIDATE',
-      },
-    });
-
-    return {
-      id: user.id,
-      name: user.name || user.email.split('@')[0] || 'Candidate',
-      email: user.email,
-    };
-  }
-
-  // Synthetic demo session candidate
-  return {
-    id: DEMO_USER_ID,
-    name: 'Demo Candidate',
-    email: DEMO_USER_EMAIL,
-  };
-}
 
 function formatRelativeDate(createdAt: Date | string): string {
   const dateDiffDays = Math.round(
@@ -100,10 +40,41 @@ function formatRelativeDate(createdAt: Date | string): string {
   return `${dateDiffDays} days ago`;
 }
 
-export default async function DashboardPage() {
-  const user = await getAuthenticatedUser();
+interface DashboardPageProps {
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
+}
 
-  // Fetch real sessions from Prisma DB with graceful error handling
+export default async function DashboardPage({
+  searchParams,
+}: DashboardPageProps = {}) {
+  const params = searchParams ? await searchParams : {};
+  const isVerifiedNotice = params.verified === 'true';
+
+  // Request-scoped cached user resolution (deduplicated with DashboardLayout)
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect('/login?redirectTo=/dashboard');
+  }
+
+  // Ensure real candidate record is synced in PostgreSQL DB
+  if (!user.isDemo) {
+    try {
+      await prisma.user.upsert({
+        where: { id: user.id },
+        update: {},
+        create: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: 'CANDIDATE',
+        },
+      });
+    } catch {
+      // Ignore background sync errors
+    }
+  }
+
+  // Fetch real sessions from Prisma DB with indexed transcript query
   let allCompletedSessions: DashboardSession[] = [];
   try {
     allCompletedSessions = await prisma.session.findMany({
@@ -113,8 +84,8 @@ export default async function DashboardPage() {
       },
       include: {
         scorecard: true,
-        _count: {
-          select: { transcripts: true },
+        transcripts: {
+          select: { id: true },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -196,7 +167,7 @@ export default async function DashboardPage() {
         );
       }).length;
     } else {
-      answeredCount = s._count?.transcripts || (s.scorecard ? 1 : 0);
+      answeredCount = s.transcripts?.length || (s.scorecard ? 1 : 0);
     }
 
     let durationSeconds = s.durationSeconds || 0;
@@ -276,7 +247,7 @@ export default async function DashboardPage() {
         );
       }).length;
     } else {
-      answeredCount = s._count?.transcripts || (s.scorecard ? 1 : 0);
+      answeredCount = s.transcripts?.length || (s.scorecard ? 1 : 0);
     }
 
     let durationSeconds = s.durationSeconds || 0;
@@ -500,6 +471,7 @@ export default async function DashboardPage() {
       achievements={achievements}
       heatmapData={heatmapData}
       weeklyGoal={weeklyGoal}
+      isVerifiedNotice={isVerifiedNotice}
     />
   );
 }

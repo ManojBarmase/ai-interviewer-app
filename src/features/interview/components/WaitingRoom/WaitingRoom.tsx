@@ -29,6 +29,9 @@ export function WaitingRoom({ onJoin }: WaitingRoomProps) {
   const numQuestions = candidateContext?.numQuestions || 6;
   const interviewType = candidateContext?.interviewType || 'Full loop';
   const role = candidateContext?.role || 'Frontend Engineer';
+  const experience = candidateContext?.experience || 'Senior';
+  const difficulty = candidateContext?.difficulty || 'Medium';
+  const timeLimit = candidateContext?.timeLimit;
 
   return (
     <div className="min-h-screen bg-[hsl(222,28%,7%)] flex flex-col items-center justify-center p-4">
@@ -51,11 +54,33 @@ export function WaitingRoom({ onJoin }: WaitingRoomProps) {
           <h2 className="text-xl font-bold text-white mb-1">
             {interviewerName}
           </h2>
-          <p className="text-sm text-white/70 mb-4">{interviewerTitle}</p>
+          <p className="text-sm text-white/70 mb-3">{interviewerTitle}</p>
 
-          <p className="text-xs text-white/50 mb-6">
-            {numQuestions} questions &middot; {interviewType} &middot; {role}
+          <p className="text-xs text-white/60 mb-2 font-medium">
+            {role} &middot; {experience} &middot; {interviewType}
           </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-1.5 mb-6">
+            <span
+              className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${
+                difficulty === 'Hard'
+                  ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                  : difficulty === 'Easy'
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                    : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+              }`}
+            >
+              {difficulty} difficulty
+            </span>
+            <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/50">
+              {numQuestions} questions
+            </span>
+            {timeLimit && timeLimit !== 'None' && (
+              <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/50">
+                {timeLimit} / answer
+              </span>
+            )}
+          </div>
 
           {/* Capabilities Pills */}
           <div className="flex flex-wrap items-center justify-center gap-2 mb-8">

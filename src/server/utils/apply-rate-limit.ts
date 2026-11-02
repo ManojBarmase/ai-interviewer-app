@@ -32,6 +32,14 @@ function resolveTier(routeName: string, tier?: RateLimitTier): RateLimitTier {
   return 'general';
 }
 
+let redisCircuitBreakerOpenUntil = 0;
+const REDIS_CIRCUIT_BREAKER_COOLDOWN_MS = 30_000;
+
+/** Testing helper to reset circuit breaker between unit tests. */
+export function resetRateLimitCircuitBreakerForTesting(): void {
+  redisCircuitBreakerOpenUntil = 0;
+}
+
 /**
  * Applies sliding-window rate limiting per identifier across tiered quotas.
  * Throws RateLimitError if the rate limit is exceeded.
@@ -42,6 +50,15 @@ export async function applyRateLimit(
   routeName: string,
   tier?: RateLimitTier,
 ): Promise<void> {
+  // If Redis connection previously timed out or failed DNS, fail open immediately
+  // to avoid blocking the user flow with repeated DNS timeouts (bypassed in unit tests).
+  if (
+    process.env.NODE_ENV !== 'test' &&
+    Date.now() < redisCircuitBreakerOpenUntil
+  ) {
+    return;
+  }
+
   const selectedTier = resolveTier(routeName, tier);
   const limiter = TIER_LIMITERS[selectedTier];
 
@@ -57,6 +74,10 @@ export async function applyRateLimit(
       throw rateLimitError;
     }
 
+    // Trip circuit breaker for 30s to shield app from repeated DNS/network latency
+    redisCircuitBreakerOpenUntil =
+      Date.now() + REDIS_CIRCUIT_BREAKER_COOLDOWN_MS;
+
     // Redis unavailable — log warning but allow request (fail-open)
     // Secondary defense: payload size validation & service-level constraints
     const logger = createSessionLogger('rate-limit-bypass', {
@@ -65,7 +86,7 @@ export async function applyRateLimit(
     });
     logger.warn(
       { err: rateLimitError },
-      'Rate limiter unavailable — failing open',
+      'Rate limiter unavailable — failing open (circuit breaker engaged for 30s)',
     );
   }
 }

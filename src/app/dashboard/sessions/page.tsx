@@ -1,10 +1,7 @@
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
-import { createServerClient } from '@supabase/ssr';
-
 import { SessionsClient } from '@/features/scorecard';
-import { DEMO_SESSION_COOKIE, DEMO_USER_ID } from '@/lib/constants';
+import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { prisma, type Prisma } from '@/server/db/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -28,29 +25,13 @@ type SessionsPageSession = Prisma.SessionGetPayload<{
 }>;
 
 export default async function SessionsPage() {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-      },
-    },
-  );
+  const user = await getCurrentUser();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const isDemoSession = cookieStore.get(DEMO_SESSION_COOKIE)?.value === 'true';
-
-  if (!user && !isDemoSession) {
+  if (!user) {
     redirect('/login?redirectTo=/dashboard/sessions');
   }
 
-  const userId = user?.id || DEMO_USER_ID;
+  const userId = user.id;
 
   let sessions: SessionsPageSession[] = [];
   try {

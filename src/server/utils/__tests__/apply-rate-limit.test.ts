@@ -7,7 +7,10 @@ import {
   generalRateLimit,
   resumeRateLimit,
 } from '@/server/integrations/cache/ratelimit';
-import { applyRateLimit } from '@/server/utils/apply-rate-limit';
+import {
+  applyRateLimit,
+  resetRateLimitCircuitBreakerForTesting,
+} from '@/server/utils/apply-rate-limit';
 
 vi.mock('@/server/integrations/cache/ratelimit', () => ({
   chatRateLimit: { limit: vi.fn() },
@@ -20,6 +23,7 @@ vi.mock('@/server/integrations/cache/ratelimit', () => ({
 describe('applyRateLimit utility', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetRateLimitCircuitBreakerForTesting();
   });
 
   it('completes successfully when rate limit check passes for chat', async () => {

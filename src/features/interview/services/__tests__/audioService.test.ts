@@ -13,6 +13,7 @@ import {
   getAvailableVoices,
   updateSessionTranscript,
   getSessionTranscript,
+  getTTSAnalyser,
 } from '../audioService';
 
 describe('AudioService Unit Tests', () => {
@@ -707,6 +708,36 @@ describe('AudioService Unit Tests', () => {
       await expect(speakPromise).rejects.toMatchObject({
         code: 'SYNTHESIS_CANCELLED',
       });
+    });
+
+    it('cancels with INTERRUPTED_BY_USER when candidate barge-in triggers stopSpeaking', async () => {
+      mockSynth.speaking = true;
+      const promise = speakText('The interviewer is currently speaking');
+
+      stopSpeaking('INTERRUPTED_BY_USER');
+
+      await expect(promise).rejects.toMatchObject({
+        code: 'INTERRUPTED_BY_USER',
+      });
+    });
+
+    it('cancels with INTERRUPTED_BY_USER when AbortSignal aborts with reason', async () => {
+      const ac = new AbortController();
+      const promise = speakText('The interviewer is currently speaking', {
+        signal: ac.signal,
+      });
+
+      ac.abort('INTERRUPTED_BY_USER');
+
+      await expect(promise).rejects.toMatchObject({
+        code: 'INTERRUPTED_BY_USER',
+      });
+    });
+
+    it('provides getTTSAnalyser for audio visualizer integration', () => {
+      const analyser = getTTSAnalyser();
+      // Safe to return AnalyserNode or null in non-audio hardware environments
+      expect(analyser === null || typeof analyser === 'object').toBe(true);
     });
   });
 });

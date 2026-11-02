@@ -400,8 +400,9 @@ export class EvaluationService {
           candidateContext?.experience ||
           candidateContext?.level ||
           'Mid-Level';
+        const difficulty = candidateContext?.difficulty || 'Medium';
         const sessionTitle = candidateContext
-          ? `${role} - ${rawType} - ${level}`
+          ? `${role} · ${level} · ${rawType} (${difficulty})`
           : 'AI Mock Interview';
 
         const interviewType = normalizeInterviewType(rawType);

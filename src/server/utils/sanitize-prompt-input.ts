@@ -5,6 +5,7 @@
  */
 
 export const MAX_RESUME_LENGTH = 4000;
+export const MAX_JOB_DESCRIPTION_LENGTH = 3000;
 export const MAX_ROLE_LENGTH = 100;
 export const MAX_TECH_STACK_ITEM_LENGTH = 50;
 

@@ -1,6 +1,7 @@
 import 'server-only';
 
 import {
+  MAX_JOB_DESCRIPTION_LENGTH,
   MAX_RESUME_LENGTH,
   MAX_ROLE_LENGTH,
   MAX_TECH_STACK_ITEM_LENGTH,
@@ -8,13 +9,16 @@ import {
 } from '@/server/utils/sanitize-prompt-input';
 
 export interface CandidateContext {
-  role?: string;
-  experience?: string;
-  level?: string;
-  techStack?: string[];
-  resumeText?: string;
-  interviewType?: string;
-  type?: string;
+  role?: string | undefined;
+  experience?: string | undefined;
+  level?: string | undefined;
+  techStack?: string[] | undefined;
+  resumeText?: string | undefined;
+  interviewType?: string | undefined;
+  type?: string | undefined;
+  difficulty?: string | undefined;
+  jobDescription?: string | undefined;
+  interviewerId?: string | undefined;
 }
 
 export interface StructuredTurn {
@@ -36,13 +40,35 @@ Return a structured JSON response strictly adhering to the required schema. Ensu
       : 'Software Engineer';
     const expText =
       candidateContext.experience || candidateContext.level || 'Mid-Level';
+    const difficultyText = candidateContext.difficulty || 'Medium';
+    const interviewTypeText =
+      candidateContext.interviewType || candidateContext.type || 'Technical';
     const techText = Array.isArray(candidateContext.techStack)
       ? candidateContext.techStack
           .map((item) => sanitizePromptInput(item, MAX_TECH_STACK_ITEM_LENGTH))
           .filter(Boolean)
           .join(', ') || 'General'
       : 'General';
-    systemInstruction += `\n\nContext about the candidate:\n- Role: ${roleText}\n- Experience: ${expText}\n- Tech Stack: ${techText}\nPlease judge their performance strictly against these exact criteria and seniority expectations.`;
+
+    systemInstruction += `\n\nEvaluation Criteria & Candidate Context:
+- Target Role: ${roleText}
+- Seniority Level: ${expText}
+- Selected Difficulty: ${difficultyText}
+- Interview Type: ${interviewTypeText}
+- Core Tech Stack: ${techText}
+
+CRITICAL: Strictly evaluate the candidate's performance against these exact criteria and seniority expectations:
+1. Seniority Expectations: For example, evaluate a Junior candidate on core fundamentals, but evaluate a Senior or Staff+ candidate strictly on system trade-offs, scalability, failure handling, and engineering maturity.
+2. Difficulty Standard: Calibrate scoring strictly to ${difficultyText} difficulty. A candidate undergoing a Hard interview is held to a substantially more rigorous standard than an Easy interview.
+3. Interview Domain: Prioritize competencies matching the ${interviewTypeText} interview type.`;
+
+    if (candidateContext.jobDescription) {
+      const sanitizedJD = sanitizePromptInput(
+        candidateContext.jobDescription,
+        MAX_JOB_DESCRIPTION_LENGTH,
+      );
+      systemInstruction += `\n\nTarget Job Description:\n"""\n${sanitizedJD}\n"""\nEvaluate how closely the candidate's skills and demonstrated competencies match this specific role's requirements.`;
+    }
 
     if (candidateContext.resumeText) {
       const sanitizedResume = sanitizePromptInput(

@@ -93,6 +93,21 @@ describe('useInterviewStore State Machine Unit Tests', () => {
       expect(useInterviewStore.getState().phase).toBe(InterviewPhase.SPEAKING);
     });
 
+    it('treats self-transitions as idempotent no-ops and returns true', () => {
+      const { transitionTo } = useInterviewStore.getState();
+
+      // IDLE -> IDLE should be an idempotent no-op and succeed without warning
+      expect(transitionTo(InterviewPhase.IDLE)).toBe(true);
+      expect(useInterviewStore.getState().phase).toBe(InterviewPhase.IDLE);
+
+      transitionTo(InterviewPhase.SPEAKING);
+      expect(useInterviewStore.getState().phase).toBe(InterviewPhase.SPEAKING);
+
+      // SPEAKING -> SPEAKING should also be an idempotent no-op
+      expect(transitionTo(InterviewPhase.SPEAKING)).toBe(true);
+      expect(useInterviewStore.getState().phase).toBe(InterviewPhase.SPEAKING);
+    });
+
     it('rejects invalid transitions and preserves current state', () => {
       const { transitionTo } = useInterviewStore.getState();
 

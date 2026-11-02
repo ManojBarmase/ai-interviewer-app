@@ -1,9 +1,6 @@
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
-import { createServerClient } from '@supabase/ssr';
-
-import { DEMO_SESSION_COOKIE } from '@/lib/constants';
+import { getCurrentUser } from '@/lib/auth/get-current-user';
 
 /**
  * Enterprise Route Protection for /interview Layout
@@ -16,26 +13,9 @@ export default async function InterviewLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-      },
-    },
-  );
+  const user = await getCurrentUser();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const isDemoSession = cookieStore.get(DEMO_SESSION_COOKIE)?.value === 'true';
-
-  if (!user && !isDemoSession) {
+  if (!user) {
     redirect('/login?redirectTo=/interview');
   }
 

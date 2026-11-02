@@ -16,6 +16,7 @@ import {
   validateChatRequest,
   sseFrame,
   sseHeaders,
+  buildInterviewerSystemPrompt,
 } from '@/server/services/chat.service';
 
 vi.mock('@/lib/config/env', () => ({
@@ -419,6 +420,121 @@ describe('ChatService & SSE Utilities', () => {
 
     it('verifies default singleton export exists', () => {
       expect(chatService).toBeInstanceOf(ChatService);
+    });
+  });
+
+  describe('buildInterviewerSystemPrompt (Strict Setup Adherence)', () => {
+    it('strictly enforces the Elena persona (rigorous, Big-Tech Principal bar)', () => {
+      const prompt = buildInterviewerSystemPrompt(
+        {
+          interviewerId: 'elena',
+          role: 'Backend Engineer',
+          experience: 'Staff+',
+          difficulty: 'Hard',
+          interviewType: 'System design',
+        },
+        2,
+        6,
+      );
+
+      expect(prompt).toContain('Elena');
+      expect(prompt).toContain('Helix Systems');
+      expect(prompt).toContain('Rigorous');
+      expect(prompt).toContain('Big Tech Principal/Staff Engineer bar');
+      expect(prompt).toContain('STAFF+');
+      expect(prompt).toContain('HARD');
+      expect(prompt).toContain('SYSTEM DESIGN');
+    });
+
+    it('strictly enforces Marcus persona (direct, fast-paced)', () => {
+      const prompt = buildInterviewerSystemPrompt(
+        {
+          interviewerId: 'marcus',
+          role: 'Full Stack Engineer',
+          experience: 'Junior',
+          difficulty: 'Easy',
+          interviewType: 'Technical',
+        },
+        1,
+        5,
+      );
+
+      expect(prompt).toContain('Marcus');
+      expect(prompt).toContain('Lumen Labs');
+      expect(prompt).toContain('Direct');
+      expect(prompt).toContain('JUNIOR');
+      expect(prompt).toContain('EASY');
+      expect(prompt).toContain('TECHNICAL');
+    });
+
+    it('strictly enforces NO follow-ups when allowFollowUps is false', () => {
+      const prompt = buildInterviewerSystemPrompt(
+        {
+          interviewerId: 'priya',
+          allowFollowUps: false,
+        },
+        2,
+        6,
+      );
+
+      expect(prompt).toContain('AI FOLLOW-UP QUESTIONS ARE DISABLED');
+      expect(prompt).toContain('You MUST NOT ask any follow-up questions');
+      expect(prompt).toContain(
+        'IMMEDIATELY transition to a COMPLETELY NEW question',
+      );
+    });
+
+    it('allows follow-ups when allowFollowUps is true', () => {
+      const prompt = buildInterviewerSystemPrompt(
+        {
+          interviewerId: 'priya',
+          allowFollowUps: true,
+        },
+        2,
+        6,
+      );
+
+      expect(prompt).toContain('AI FOLLOW-UPS ARE ENABLED');
+    });
+
+    it('enforces time limit per answer if provided', () => {
+      const prompt = buildInterviewerSystemPrompt(
+        {
+          timeLimit: '90s',
+        },
+        1,
+        6,
+      );
+
+      expect(prompt).toContain('TIME LIMIT PER ANSWER: 90s');
+    });
+
+    it('signals the FINAL question on the last turn', () => {
+      const prompt = buildInterviewerSystemPrompt(
+        {
+          numQuestions: 6,
+        },
+        6,
+        6,
+      );
+
+      expect(prompt).toContain('FINAL question');
+    });
+
+    it('includes target job description and resume when provided', () => {
+      const prompt = buildInterviewerSystemPrompt(
+        {
+          jobDescription: 'Must have Kafka and Kubernetes experience.',
+          resumeText: 'Led migration to Next.js 15 at Acme Corp.',
+        },
+        2,
+        6,
+      );
+
+      expect(prompt).toContain('TARGET JOB DESCRIPTION REQUIREMENTS:');
+      expect(prompt).toContain('Kafka and Kubernetes experience');
+      expect(prompt).toContain("CANDIDATE'S EXTRACTED RESUME:");
+      expect(prompt).toContain('Led migration to Next.js 15');
     });
   });
 });
